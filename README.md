@@ -81,6 +81,12 @@ npm run build
 - A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
 - Windows and macOS.
 
+## Pictures
+
+The FIBER logo and product renders are HARDWARIO artworks cleared for public use;
+`src/assets/artwork.lock.json` records each one's source file, checksum and version. The board photos
+in the steps were taken for this app.
+
 ## Related repositories
 
 - [hardwario/fiber-agent](https://github.com/hardwario/fiber-agent): the FIBER software; its `bootstrap.sh`

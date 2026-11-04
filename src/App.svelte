@@ -2,10 +2,10 @@
   import { onMount } from "svelte";
   import symbol from "./assets/hardwario-symbol.svg";
   import symbolReversed from "./assets/hardwario-symbol-reversed.svg";
-  // The official FIBER logo (company/docs assets/brand, white) coloured like the CHESTER and EMBER
-  // logos: red symbol and HARDWARIO, grey (on dark: white) product name.
-  import logo from "./assets/brand/hardwario-fiber-logo.svg";
-  import logoReversed from "./assets/brand/hardwario-fiber-logo-reversed.svg";
+  // The official stacked FIBER logo (HARDWARIO over FIBER) from hardwario/artwork, as recorded in
+  // src/assets/artwork.lock.json.
+  import logo from "./assets/brand/hardwario-fiber-logo-stacked.svg";
+  import logoReversed from "./assets/brand/hardwario-fiber-logo-stacked-reversed.svg";
   import Icon from "./lib/components/Icon.svelte";
   import PrefsSwitcher from "./lib/components/PrefsSwitcher.svelte";
   import { fill, t } from "./lib/i18n/index.svelte";
@@ -247,7 +247,8 @@
     width: 100%;
   }
   .wordmark .logo {
-    width: 100%;
+    width: 150px;
+    max-width: 100%;
     height: auto;
   }
   .setup {

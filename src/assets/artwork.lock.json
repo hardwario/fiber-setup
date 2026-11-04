@@ -1,0 +1,40 @@
+{
+  "brand/hardwario-fiber-logo-stacked-reversed.svg": {
+    "artwork": "hardwario-fiber-logo",
+    "file": "hardwario-fiber-logo-stacked-reversed.svg",
+    "sha256": "018a4388ada65f02ce81b640b1a8d7b01b0b99135eaccb4f2e8158d31fb111e9",
+    "commit": "5fcffc3",
+    "params": {
+      "format": "svg"
+    }
+  },
+  "brand/hardwario-fiber-logo-stacked.svg": {
+    "artwork": "hardwario-fiber-logo",
+    "file": "hardwario-fiber-logo-stacked.svg",
+    "sha256": "5c84f505e75d6d52dd53376548c3338333739f8395db6e3686b44a04f40f5685",
+    "commit": "5fcffc3",
+    "params": {
+      "format": "svg"
+    }
+  },
+  "photos/fiber-front-display.png": {
+    "artwork": "fiber-top",
+    "file": "fiber-top.png",
+    "sha256": "d585e5c0c40e823757a14aab84db3b1b054f21e58de159a3b65fb5a124491a7c",
+    "commit": "5fcffc3",
+    "params": {
+      "width": 900,
+      "format": "png"
+    }
+  },
+  "photos/fiber-product.png": {
+    "artwork": "fiber-left",
+    "file": "fiber-left.png",
+    "sha256": "202a5e16c920aaf1ecd7c452c3e8a09059485321fa86b6c196b96bcb296d746d",
+    "commit": "5fcffc3",
+    "params": {
+      "width": 900,
+      "format": "png"
+    }
+  }
+}
