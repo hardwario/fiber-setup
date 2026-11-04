@@ -1,0 +1,28 @@
+[package]
+name = "fiber-setup"
+description = "FIBER Setup: flash a HARDWARIO FIBER (CM4) over its USB-B port, step by step"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+default-run = "fiber-setup"
+
+[lib]
+name = "fiber_setup_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+fiber-setup-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+[lints]
+workspace = true

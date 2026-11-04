@@ -1,0 +1,19 @@
+[package]
+name = "fiber-setup-cli"
+description = "Command line FIBER Setup: flash a HARDWARIO FIBER (CM4) over USB-B"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fiber-setup-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+fatfs = "0.3"
+
+[lints]
+workspace = true

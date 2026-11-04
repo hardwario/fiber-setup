@@ -1,0 +1,14 @@
+# Allow the user at the desktop (uaccess) and members of the
+# `plugdev` group to access Broadcom devices in boot mode, so `rpiboot` can
+# talk to a CM4 over USB without sudo. Same VID/PIDs used by Raspberry Pi's official rpiboot
+# package.
+#
+#   0a5c:2763 - BCM2710 boot mode
+#   0a5c:2764 - BCM2711 boot mode
+#   0a5c:2711 - CM4 / Pi4 bootrom
+#   0a5c:2712 - Pi 5 / CM5 bootrom
+
+SUBSYSTEM=="usb", ATTR{idVendor}=="0a5c", ATTR{idProduct}=="2763", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0a5c", ATTR{idProduct}=="2764", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0a5c", ATTR{idProduct}=="2711", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0a5c", ATTR{idProduct}=="2712", MODE="0664", GROUP="plugdev", TAG+="uaccess"

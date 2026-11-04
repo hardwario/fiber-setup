@@ -1,0 +1,18 @@
+# Let the user at the desktop (uaccess) and members of `plugdev` write the
+# CM4's eMMC that rpiboot exposes over USB, so FIBER Setup writes the image
+# without a password (no pkexec). Only that disk: a removable USB disk with
+# the mass-storage gadget's SCSI vendor `mmcblk0`, or the bootrom firmware's
+# `RPi-MSD-` model `0001`, as FIBER Setup itself looks for it (disk.rs,
+# looks_like_cm4_emmc). Other disks keep root:disk.
+# The desktop leaves the disk and its partitions alone (UDISKS_IGNORE): a
+# partition it mounted while the image is written would be written back
+# over it. The partition lines match without `removable`: udev wants all
+# ATTRS of a rule on one parent, and `removable` (the disk) and `vendor` (its
+# SCSI device) sit on two, so with both such a line never matched and the
+# desktop mounted the boot partition.
+# After 60-persistent-storage.rules, whose usb_id import sets ID_BUS, and
+# before 73-seat-late.rules, which applies uaccess.
+SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", ATTR{removable}=="1", ATTRS{vendor}=="mmcblk*", GROUP="plugdev", MODE="0660", TAG+="uaccess", ENV{UDISKS_IGNORE}="1"
+SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", ATTR{removable}=="1", ATTRS{vendor}=="RPi-MSD-*", ATTRS{model}=="0001*", GROUP="plugdev", MODE="0660", TAG+="uaccess", ENV{UDISKS_IGNORE}="1"
+SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_BUS}=="usb", ATTRS{vendor}=="mmcblk*", ENV{UDISKS_IGNORE}="1"
+SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_BUS}=="usb", ATTRS{vendor}=="RPi-MSD-*", ATTRS{model}=="0001*", ENV{UDISKS_IGNORE}="1"
