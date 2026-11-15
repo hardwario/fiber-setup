@@ -1,0 +1,100 @@
+# Packs FIBER Setup for Windows: the installer and the portable zip, from an app that is already
+# built. In steps, because a release signs files in between (docs/release.md):
+#
+#   stage        the app as it will be installed: fiber-setup.exe and the usbboot folder
+#   webview2     Microsoft's WebView2 installer, which the app's installer carries along
+#   uninstaller  uninstall.exe (a release signs it, with the app and the driver's catalog)
+#   installer    the installer, which carries the staged app and that uninstall.exe
+#   zip          the portable zip of the staged app
+#
+# -Work is the folder they share. -Label is the version in the file names (a tag's version in a
+# release; anything else in a test).
+param(
+  [Parameter(Mandatory)][ValidateSet('stage', 'webview2', 'uninstaller', 'installer', 'zip')][string]$Step,
+  [string]$Exe,
+  [string]$Label,
+  [string]$Work = 'target\windows-package'
+)
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+New-Item -ItemType Directory -Force $Work | Out-Null
+$Work = (Resolve-Path $Work).Path
+$app = Join-Path $Work 'app'
+$out = Join-Path $Work 'out'
+$version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+if (-not $Label) { $Label = $version }
+
+function Find-MakeNsis {
+  $found = Get-Command makensis.exe -ErrorAction SilentlyContinue
+  if ($found) { return $found.Source }
+  $usual = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+  if (Test-Path $usual) { return $usual }
+  throw 'makensis.exe not found: install NSIS 3 (choco install nsis)'
+}
+
+function Invoke-MakeNsis([string[]]$Defines) {
+  $makensis = Find-MakeNsis
+  $arguments = @('/V2', '/INPUTCHARSET', 'UTF8', "/DVERSION=$version") + $Defines + (Join-Path $root 'packaging\windows\installer.nsi')
+  & $makensis @arguments
+  if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
+}
+
+switch ($Step) {
+  'stage' {
+    if (-not $Exe) { throw '-Exe: the built fiber-setup.exe' }
+    $usbboot = Join-Path $root 'src-tauri\resources\usbboot'
+    foreach ($needed in 'rpiboot.exe', 'mass-storage-gadget64\boot.img', 'driver\fiber-usbboot.inf', 'driver\fiber-usbboot.cat') {
+      if (-not (Test-Path (Join-Path $usbboot $needed))) { throw "$needed is missing from $usbboot" }
+    }
+    Remove-Item $app -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $app | Out-Null
+    Copy-Item $Exe (Join-Path $app 'fiber-setup.exe')
+    Copy-Item $usbboot (Join-Path $app 'usbboot') -Recurse
+    Get-ChildItem $app -Recurse -File | ForEach-Object { $_.FullName.Substring($app.Length + 1) }
+  }
+  'webview2' {
+    # The small one, which downloads the rest: https://developer.microsoft.com/microsoft-edge/webview2
+    $setup = Join-Path $Work 'MicrosoftEdgeWebview2Setup.exe'
+    Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $setup
+    $signature = Get-AuthenticodeSignature $setup
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notlike '*O=Microsoft Corporation*') {
+      throw "MicrosoftEdgeWebview2Setup.exe is not signed by Microsoft: $($signature.Status), $($signature.SignerCertificate.Subject)"
+    }
+    "MicrosoftEdgeWebview2Setup.exe: $((Get-Item $setup).Length) bytes, signed by $($signature.SignerCertificate.Subject)"
+  }
+  'uninstaller' {
+    $maker = Join-Path $Work 'make-uninstaller.exe'
+    $uninstaller = Join-Path $Work 'uninstall.exe'
+    Remove-Item $maker, $uninstaller -ErrorAction SilentlyContinue
+    Invoke-MakeNsis @('/DUNINSTALLER_ONLY', "/DAPP_DIR=$app", "/DOUT_FILE=$maker")
+    # It installs nothing: it writes uninstall.exe next to itself and quits.
+    Start-Process $maker -Wait
+    if (-not (Test-Path $uninstaller)) { throw 'make-uninstaller.exe wrote no uninstall.exe' }
+    Remove-Item $maker
+    "uninstall.exe: $((Get-Item $uninstaller).Length) bytes"
+  }
+  'installer' {
+    $uninstaller = Join-Path $Work 'uninstall.exe'
+    if (-not (Test-Path $uninstaller)) { throw 'uninstall.exe is missing: run the uninstaller step first' }
+    New-Item -ItemType Directory -Force $out | Out-Null
+    $setup = Join-Path $out "fiber-setup-$Label-windows-x64-setup.exe"
+    $defines = @("/DAPP_DIR=$app", "/DOUT_FILE=$setup", "/DUNINSTALLER=$uninstaller")
+    $webview2 = Join-Path $Work 'MicrosoftEdgeWebview2Setup.exe'
+    if (Test-Path $webview2) { $defines += "/DWEBVIEW2=$webview2" } else { 'Without WebView2: MicrosoftEdgeWebview2Setup.exe is not in the work folder.' }
+    Invoke-MakeNsis $defines
+    "$(Split-Path $setup -Leaf): $((Get-Item $setup).Length) bytes"
+  }
+  'zip' {
+    New-Item -ItemType Directory -Force $out | Out-Null
+    $zip = Join-Path $out "fiber-setup-$Label-windows-x64-portable.zip"
+    Remove-Item $zip -ErrorAction SilentlyContinue
+    # One folder in the zip, so that unpacking it anywhere keeps the app and usbboot together.
+    $top = Join-Path $Work 'zip\FIBER Setup'
+    Remove-Item (Join-Path $Work 'zip') -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force (Split-Path $top) | Out-Null
+    Copy-Item $app $top -Recurse
+    Compress-Archive -Path $top -DestinationPath $zip
+    Remove-Item (Join-Path $Work 'zip') -Recurse -Force
+    "$(Split-Path $zip -Leaf): $((Get-Item $zip).Length) bytes"
+  }
+}
