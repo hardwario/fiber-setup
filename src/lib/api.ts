@@ -116,7 +116,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>): Api {
   return {
     simulated: true,
     appInfo: async () => ({
-      version: "0.1.0",
+      version: "1.0.0",
       os: "linux",
       image,
       tools_found: true,

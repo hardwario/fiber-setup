@@ -8,8 +8,8 @@ installs the FIBER software by itself and restarts once.
 Same structure and look as [hardwario/tower-bridge](https://github.com/hardwario/tower-bridge): Tauri 2,
 Rust, Svelte 5; `crates/fiber-setup-core` (no Tauri), `crates/fiber-setup-cli`, `src-tauri`, `src`.
 
-**Status: first version (0.1.0, 2026-11-04).** Linux and macOS. Not yet tested on a real FIBER; the macOS
-side (2026-11-15) has not had a FIBER connected at all yet.
+**Status: 1.0.0 (2026-11-15), the first release.** Linux and macOS. Not yet tested on a real FIBER; the
+macOS side has not had a FIBER connected at all yet.
 
 ## How it works
 

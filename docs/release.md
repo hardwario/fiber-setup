@@ -2,8 +2,10 @@
 
 ## Steps
 
-1. Set the new version in `package.json` and in `Cargo.toml` (the workspace: the core, the CLI and the app
-   take theirs from it, and so does Tauri). `node scripts/check-version.mjs v1.2.3` checks that they agree.
+1. Set the new version in `package.json` (`npm version 1.2.3 --no-git-tag-version` also updates
+   `package-lock.json`), in `Cargo.toml` (the workspace: the core, the CLI and the app take theirs from it,
+   and so does Tauri; `cargo check` then updates `Cargo.lock`) and in `src/lib/api.ts` (the simulated
+   FIBER). `node scripts/check-version.mjs v1.2.3` checks that they agree.
 2. Commit, then tag and push: `git tag v1.2.3 && git push origin v1.2.3`.
 3. The Release workflow (`.github/workflows/release.yml`) tests on Linux and macOS, builds both, signs and
    notarizes the macOS app, and creates a **draft** release with all files and their `.sha256` checksums.
