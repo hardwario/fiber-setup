@@ -113,7 +113,7 @@ if (-not $d) { throw 'the disk is gone' }
 if (@($d).Count -ne 1) { throw 'more than one disk has that path' }
 if ([string]$d.BusType -ne $env:FIBER_SETUP_BUS -or $d.IsBoot -or $d.IsSystem) { throw 'not a disk to clean' }
 $script = Join-Path $env:TEMP ('fiber-setup-' + [guid]::NewGuid().ToString() + '.txt')
-Set-Content -LiteralPath $script -Encoding ASCII -Value @('select disk ' + $d.Number, 'clean')
+Set-Content -LiteralPath $script -Encoding ASCII -Value @(('select disk ' + $d.Number), 'clean')
 try {
   $said = & (Join-Path $env:SystemRoot 'System32\diskpart.exe') /s $script | Out-String
   if ($LASTEXITCODE -ne 0) { throw ('diskpart: ' + $said.Trim()) }

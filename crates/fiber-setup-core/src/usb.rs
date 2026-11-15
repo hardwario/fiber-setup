@@ -91,7 +91,9 @@ pub fn boards_in(root: &Path, emmc_ports: &[String]) -> Vec<UsbBoard> {
     out
 }
 
-#[cfg(test)]
+// Unix only: sysfs names a USB interface with a colon (`3-2:1.0`), which Windows allows in no
+// folder name.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
