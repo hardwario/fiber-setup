@@ -14,6 +14,11 @@
 # come out for Apple silicon and Intel in one file and run from macOS 11 on: libusb from its
 # pinned source release, rpiboot against it. (Homebrew's libusb is for the Mac it was installed
 # on only; it is taken along only when a prebuilt checkout was linked against it.)
+#
+# On Windows this runs in Cygwin's bash, the way Raspberry Pi builds rpiboot for Windows (Cygwin
+# packages gcc-core, make, git, pkg-config, libusb1.0-devel). rpiboot.exe needs Cygwin's DLLs
+# next to it, so they go into the bundle, and so does the USB driver's description
+# (packaging/windows/driver); its signed catalog is made when a release is built.
 set -euo pipefail
 
 USBBOOT_COMMIT=d3d51bbe13593555f03a0470d8ca750be1518670
@@ -21,13 +26,17 @@ LIBUSB_VERSION=1.0.30
 LIBUSB_SHA256=fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf
 LIBUSB_URL=https://github.com/libusb/libusb/releases/download/v$LIBUSB_VERSION/libusb-$LIBUSB_VERSION.tar.bz2
 
+case "$(uname -s)" in
+    CYGWIN*) exe=.exe ;;
+    *) exe= ;;
+esac
 here=$(cd "$(dirname "$0")/.." && pwd)
 out="$here/src-tauri/resources/usbboot"
 src=${USBBOOT_DIR:-$HOME/github/raspberrypi/usbboot}
 libusb_license=
 libusb_source=
 
-if [ ! -x "$src/rpiboot" ]; then
+if [ ! -x "$src/rpiboot$exe" ]; then
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     git init --quiet "$tmp/usbboot"
@@ -68,7 +77,7 @@ done
 
 rm -rf "$out"
 mkdir -p "$out/mass-storage-gadget64"
-install -m 0755 "$src/rpiboot" "$out/rpiboot"
+install -m 0755 "$src/rpiboot$exe" "$out/rpiboot$exe"
 install -m 0644 "$gadget/boot.img" "$gadget/bootfiles.bin" "$gadget/config.txt" "$out/mass-storage-gadget64/"
 install -m 0644 "$src/LICENSE" "$out/LICENSE"
 [ -f "$src/LICENSE.firmware" ] && install -m 0644 "$src/LICENSE.firmware" "$out/LICENSE.firmware"
@@ -92,6 +101,18 @@ if [ "$(uname -s)" = Darwin ]; then
     fi
 fi
 
+cygwin=
+if [ -n "$exe" ]; then
+    # The DLLs rpiboot.exe loads that are Cygwin's (Windows' own are everywhere).
+    for dll in $(ldd "$out/rpiboot.exe" | awk '$3 ~ /^\/usr\/bin\// { print $3 }'); do
+        install -m 0755 "$dll" "$out/"
+        cygwin="$cygwin $(basename "$dll")"
+    done
+    [ -n "$cygwin" ] || { echo "error: rpiboot.exe loads no Cygwin DLL; was it built in Cygwin?" >&2; exit 1; }
+    mkdir -p "$out/driver"
+    install -m 0644 "$here/packaging/windows/driver/fiber-usbboot.inf" "$out/driver/"
+fi
+
 {
     echo "rpiboot and mass-storage-gadget64 from https://github.com/raspberrypi/usbboot"
     echo "commit: $(git -C "$src" rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -99,6 +120,11 @@ fi
     if [ -n "$libusb_source" ]; then
         echo "libusb (LGPL-2.1, https://libusb.info): $libusb_source; rpiboot loads it from its own folder."
     fi
+    if [ -n "$cygwin" ]; then
+        echo "Cygwin's DLLs (https://cygwin.com; cygwin1.dll LGPL-3.0-or-later, cygusb is libusb, LGPL-2.1):$cygwin."
+        echo "driver/: the WinUSB driver description for the boot ROM, by HARDWARIO a.s. (this repository)."
+    fi
 } > "$out/SOURCES.txt"
 echo "usbboot bundle ready in $out"
 ls -la "$out" "$out/mass-storage-gadget64"
+if [ -d "$out/driver" ]; then ls -la "$out/driver"; fi

@@ -16,15 +16,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Everything in the README's "Checks", on both systems the app runs on: the code that finds
-  # and writes a FIBER is Linux's on one and macOS's on the other.
+  # Everything in the README's "Checks", on the three systems the app runs on: the code that
+  # finds and writes a FIBER is a different one on each.
   checks:
     name: Checks (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,6 +53,33 @@ jobs:
       - run: npm run build
       # The app's build takes rpiboot and the gadget from here.
       - run: npm run usbboot
+        if: runner.os != 'Windows'
+      # On Windows rpiboot is built in Cygwin, as Raspberry Pi builds it. Cygwin stays off the
+      # PATH: its tools must not stand in for Windows' own in the other steps.
+      - name: Cygwin, for rpiboot
+        if: runner.os == 'Windows'
+        id: cygwin
+        uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7
+        with:
+          add-to-path: false
+          packages: |
+            gcc-core
+            make
+            git
+            pkg-config
+            libusb1.0-devel
+      - name: rpiboot and the gadget (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CHERE_INVOKING: 1
+        run: |
+          & "${{ steps.cygwin.outputs.root }}\bin\bash.exe" --login -o igncr -eo pipefail scripts/fetch-usbboot.sh
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: The USB driver's catalog
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: scripts/driver-catalog.ps1
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked

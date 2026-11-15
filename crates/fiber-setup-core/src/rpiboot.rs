@@ -6,7 +6,9 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+#[cfg(not(windows))]
+use std::process::Command;
+use std::process::Stdio;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize)]
@@ -16,9 +18,18 @@ pub struct Tools {
     pub gadget: PathBuf,
 }
 
+/// rpiboot's file name: `rpiboot.exe` on Windows (built with Cygwin, its DLLs next to it).
+const RPIBOOT: &str = if cfg!(windows) { "rpiboot.exe" } else { "rpiboot" };
+
+#[cfg(unix)]
 fn is_executable(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(windows)]
+fn is_executable(p: &Path) -> bool {
+    p.is_file()
 }
 
 /// The gadget needs these; a directory without them is someone else's.
@@ -40,7 +51,7 @@ pub fn find_tools(extra: &[PathBuf]) -> Option<Tools> {
     }
     for dir in &dirs {
         let gadget = dir.join("mass-storage-gadget64");
-        let rpiboot = [dir.join("rpiboot"), dir.join("bin/rpiboot")].into_iter().find(|p| is_executable(p));
+        let rpiboot = [dir.join(RPIBOOT), dir.join("bin").join(RPIBOOT)].into_iter().find(|p| is_executable(p));
         if let Some(rpiboot) = rpiboot
             && is_gadget(&gadget)
         {
@@ -48,6 +59,9 @@ pub fn find_tools(extra: &[PathBuf]) -> Option<Tools> {
         }
     }
     // A system rpiboot (Debian/Ubuntu package `rpiboot`) with its gadget files.
+    if cfg!(windows) {
+        return None;
+    }
     let system = ["/usr/bin/rpiboot", "/usr/local/bin/rpiboot"].iter().map(PathBuf::from).find(|p| is_executable(p))?;
     ["/usr/share/rpiboot/mass-storage-gadget64", "/usr/local/share/rpiboot/mass-storage-gadget64"]
         .iter()
@@ -58,6 +72,9 @@ pub fn find_tools(extra: &[PathBuf]) -> Option<Tools> {
 
 /// Runs rpiboot for the board on `port` and returns when it has handed the board over to the
 /// gadget (rpiboot exits by itself then). Output lines go to `on_line`.
+///
+/// On Windows rpiboot is not told the port: it names ports its own way there, which the app
+/// does not know, so it takes the board it finds (the caller sees to it that there is one).
 pub fn run(
     tools: &Tools,
     port: &str,
@@ -66,11 +83,15 @@ pub fn run(
     cancel: &Cancel,
 ) -> Result<()> {
     let started = std::time::Instant::now();
-    let mut child = Command::new(&tools.rpiboot)
-        .arg("-d")
-        .arg(&tools.gadget)
-        .arg("-p")
-        .arg(port)
+    #[cfg(not(windows))]
+    let mut command = Command::new(&tools.rpiboot);
+    #[cfg(windows)]
+    let mut command = crate::windows::hidden(&tools.rpiboot);
+    command.arg("-d").arg(&tools.gadget);
+    if !cfg!(windows) {
+        command.arg("-p").arg(port);
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

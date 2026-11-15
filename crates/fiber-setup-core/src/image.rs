@@ -25,13 +25,15 @@ pub struct Prepared {
     pub name: String,
 }
 
-/// The cache folder: `$XDG_CACHE_HOME/fiber-setup` or `~/.cache/fiber-setup`.
+/// The cache folder: `$XDG_CACHE_HOME/fiber-setup` or `~/.cache/fiber-setup`; on Windows
+/// `%LOCALAPPDATA%\fiber-setup`.
 pub fn cache_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("FIBER_SETUP_CACHE") {
         return PathBuf::from(dir);
     }
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
+        .or_else(|| std::env::var_os("LOCALAPPDATA").filter(|_| cfg!(windows)).map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(std::env::temp_dir);
     base.join("fiber-setup")

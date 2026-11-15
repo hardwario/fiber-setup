@@ -5,10 +5,18 @@
 //! macOS has no such step: any user may talk to the boot ROM over USB, and for the eMMC macOS
 //! asks for the password each time it is written (`macos.rs`). There the rules count as
 //! installed and installing them does nothing.
+//!
+//! On Windows the step installs a driver: the boot ROM has none there, and rpiboot talks to it
+//! through WinUSB. The driver package (an .inf that binds the boot ROM to Windows' own WinUSB,
+//! with HARDWARIO's signature) lies next to rpiboot, in `driver/` (`windows.rs`).
 
-use anyhow::{Context, Result, bail};
+#[cfg(not(windows))]
+use anyhow::bail;
+use anyhow::{Context, Result};
 use serde::Serialize;
+#[cfg(not(windows))]
 use std::path::Path;
+#[cfg(not(windows))]
 use std::process::Command;
 
 pub const RULES_DIR: &str = "/etc/udev/rules.d";
@@ -19,6 +27,7 @@ pub const EMMC_RULE_TEXT: &str = include_str!("../udev/61-fiber-cm4-emmc.rules")
 
 /// Root's side: write both rules and apply them to devices already plugged in, so they work at
 /// once, without a new login. `$1` the directory, `$2` / `$3` the rules.
+#[cfg(not(windows))]
 const INSTALL_SCRIPT: &str = r#"set -eu
 dir=$1
 mkdir -p "$dir"
@@ -34,7 +43,8 @@ fi
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
-    /// Both rules are installed with our text. Always true on macOS, which needs none.
+    /// Both rules are installed with our text. Always true on macOS, which needs none. On
+    /// Windows: the driver for the boot ROM is installed.
     pub rules_installed: bool,
     /// The polkit helper that asks for the password is there.
     pub pkexec: bool,
@@ -44,7 +54,14 @@ pub fn status() -> Status {
     if cfg!(target_os = "macos") {
         return Status { rules_installed: true, pkexec: false };
     }
-    let dir = Path::new(RULES_DIR);
+    #[cfg(windows)]
+    return Status { rules_installed: crate::windows::driver_installed(), pkexec: false };
+    #[cfg(not(windows))]
+    status_in(Path::new(RULES_DIR))
+}
+
+#[cfg(not(windows))]
+fn status_in(dir: &Path) -> Status {
     let same = |name: &str, text: &str| std::fs::read_to_string(dir.join(name)).map(|t| t == text).unwrap_or(false);
     Status {
         rules_installed: same(RPIBOOT_RULE, RPIBOOT_RULE_TEXT) && same(EMMC_RULE, EMMC_RULE_TEXT),
@@ -52,15 +69,33 @@ pub fn status() -> Status {
     }
 }
 
+#[cfg(not(windows))]
 fn which(name: &str) -> bool {
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file())).unwrap_or(false)
 }
 
-/// Installs the rules through pkexec: the desktop asks for the password.
-pub fn install() -> Result<()> {
+/// Installs the rules through pkexec: the desktop asks for the password. On Windows, installs
+/// the driver that lies next to rpiboot (`tools`): Windows asks whether to trust its publisher.
+pub fn install(tools: Option<&crate::rpiboot::Tools>) -> Result<()> {
     if cfg!(target_os = "macos") {
         return Ok(());
     }
+    #[cfg(windows)]
+    {
+        let dir = tools
+            .and_then(|t| t.rpiboot.parent())
+            .context("rpiboot and the USB driver are missing from this installation")?;
+        crate::windows::install_driver(&dir.join("driver").join(crate::windows::DRIVER_INF))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = tools;
+        install_rules()
+    }
+}
+
+#[cfg(not(windows))]
+fn install_rules() -> Result<()> {
     if !which("pkexec") {
         bail!(
             "pkexec is missing; install the rules by hand: sudo cp {RPIBOOT_RULE} {EMMC_RULE} {RULES_DIR}/ && sudo udevadm control --reload-rules"

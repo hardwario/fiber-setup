@@ -5,7 +5,8 @@
 //! port ([`disk`]), write the image with the first-boot settings patched into its boot partition
 //! ([`firstboot`], the "image loopback"), and read it all back ([`flash`]).
 //!
-//! Linux finds the boards and disks in sysfs; macOS asks its I/O Registry ([`macos`]).
+//! Linux finds the boards and disks in sysfs; macOS asks its I/O Registry (`macos`), Windows its
+//! device and storage management (`windows`).
 
 pub mod access;
 pub mod catalog;
@@ -20,6 +21,8 @@ pub mod macos;
 pub mod mbr;
 pub mod rpiboot;
 pub mod usb;
+#[cfg(windows)]
+pub mod windows;
 
 pub use event::{Cancel, Event, Phase};
 

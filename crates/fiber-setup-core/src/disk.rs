@@ -5,7 +5,7 @@
 //! (`proximos/provisioning`, `rpiboot.rs`), cut down.
 //!
 //! That probe reads sysfs, so it is Linux's; on macOS the disks come from the I/O Registry and
-//! are opened through `macos.rs`.
+//! are opened through `macos.rs`, on Windows from its storage management through `windows.rs`.
 
 use crate::event::{Cancel, Event, Phase, Sink, Throttle};
 use anyhow::{Context, Result, bail};
@@ -14,7 +14,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::FileTypeExt;
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -55,7 +55,9 @@ impl BlockDevice {
 pub fn list() -> std::io::Result<Vec<BlockDevice>> {
     #[cfg(target_os = "macos")]
     return crate::macos::disks().map_err(|e| std::io::Error::other(format!("{e:#}")));
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    return crate::windows::disks().map_err(|e| std::io::Error::other(format!("{e:#}")));
+    #[cfg(all(unix, not(target_os = "macos")))]
     list_in(Path::new("/sys/block"))
 }
 
@@ -113,7 +115,7 @@ fn usb_identity(block: &Path) -> (Option<String>, Option<String>) {
 }
 
 /// Whether the disk or one of its partitions is mounted.
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn is_mounted(dev: &BlockDevice) -> bool {
     let Ok(mounts) = std::fs::read_to_string("/proc/mounts") else { return false };
     let prefix = dev.path.as_str();
@@ -128,11 +130,15 @@ pub fn is_mounted(dev: &BlockDevice) -> bool {
 
 /// Nothing of the disk may be mounted while it is written. On Linux a mounted FIBER is refused:
 /// the udev rule keeps the desktop from mounting its partitions, so a mount is somebody's choice.
-/// macOS mounts every disk it sees, so there the FIBER's volumes are unmounted.
+/// macOS mounts every disk it sees, so there the FIBER's volumes are unmounted. So does Windows,
+/// which lets go of a volume only with its partition: there the old partition table is removed
+/// (the write would wipe it first anyway).
 pub fn free_for_writing(dev: &BlockDevice) -> Result<()> {
     #[cfg(target_os = "macos")]
     return crate::macos::unmount(dev);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    return crate::windows::clean(dev);
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         if is_mounted(dev) {
             bail!("{} is mounted on this computer; unmount it and try again", dev.path);
@@ -201,7 +207,7 @@ impl Target {
 }
 
 /// Opens the eMMC for writing.
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn open_device(p: &Path) -> Result<File> {
     let meta = std::fs::metadata(p).with_context(|| format!("{} is gone", p.display()))?;
     if !meta.file_type().is_block_device() {
@@ -233,13 +239,20 @@ fn open_device(p: &Path) -> Result<File> {
     crate::macos::open_disk(p)
 }
 
+/// Opens the eMMC for writing and for reading it back, as on macOS with one handle for both.
+/// It checks there that the disk is a FIBER's.
+#[cfg(windows)]
+fn open_device(p: &Path) -> Result<File> {
+    crate::windows::open_disk(p)
+}
+
 /// glibc's encoding of a device number.
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(all(unix, not(target_os = "macos")), test))]
 fn dev_major(dev: u64) -> u64 {
     ((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(all(unix, not(target_os = "macos")), test))]
 fn dev_minor(dev: u64) -> u64 {
     (dev & 0xff) | ((dev >> 12) & !0xff)
 }
@@ -346,7 +359,7 @@ pub fn verify(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Canc
     verify_from(src, &mut disk, target.path(), events, cancel)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn open_verify(target: &Target) -> Result<File> {
     let path = target.path();
     match (OpenOptions::new().read(true).custom_flags(libc::O_DIRECT).open(path), target) {
@@ -358,14 +371,15 @@ fn open_verify(target: &Target) -> Result<File> {
     }
 }
 
-/// macOS has no O_DIRECT: a disk's raw device is never read from memory, and for a file the
-/// cache is switched off (where the file system can).
-#[cfg(target_os = "macos")]
+/// macOS and Windows have no O_DIRECT: a disk is read through its raw device, never from
+/// memory, and for a file macOS switches the cache off (where the file system can).
+#[cfg(any(target_os = "macos", windows))]
 fn open_verify(target: &Target) -> Result<File> {
     match target {
         Target::Device(p) => open_device(p),
         Target::File(p) => {
             let f = File::open(p).with_context(|| format!("opening {} to verify", p.display()))?;
+            #[cfg(target_os = "macos")]
             let _ = rustix::fs::fcntl_nocache(&f, true);
             Ok(f)
         }
@@ -373,9 +387,10 @@ fn open_verify(target: &Target) -> Result<File> {
 }
 
 /// Writes and reads back in one go. The same as [`write`] and then [`verify`], except that a disk
-/// on macOS is opened once for both: each open asks for the password there.
+/// on macOS and Windows is opened once for both: each open asks for the password on macOS, and
+/// on Windows the new partitions stay unseen (and so unmounted) until the disk is closed.
 pub fn write_and_verify(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cancel) -> Result<()> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     if let Target::Device(p) = target {
         let mut disk = write_open(src, target, events, cancel)?;
         events(Event::Phase { phase: Phase::Verify });
@@ -509,6 +524,85 @@ mod tests {
         assert_eq!(&written[p + 10_000..size as usize], &data[p + 10_000..]);
     }
 
+    /// The same on Windows, where a virtual disk (VHD) stands in for the eMMC. It first gets a
+    /// mounted volume, as a FIBER that was set up before has, which must be gone before the
+    /// write. Needs administrator rights, as the app has; without them the test passes unrun.
+    #[cfg(windows)]
+    #[test]
+    fn writes_and_verifies_a_raw_disk() {
+        use std::process::Command;
+
+        fn diskpart(lines: &[String]) -> Option<std::process::Output> {
+            let script = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
+            std::fs::write(script.path(), lines.join("\r\n")).unwrap();
+            let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+            let diskpart = Path::new(&root).join("System32").join("diskpart.exe");
+            // Started without administrator rights, diskpart cannot start at all.
+            Command::new(diskpart).arg("/s").arg(script.path()).output().ok()
+        }
+        struct Attached(String);
+        impl Drop for Attached {
+            fn drop(&mut self) {
+                let _ = diskpart(&[format!("select vdisk file=\"{}\"", self.0), "detach vdisk".into()]);
+            }
+        }
+
+        let t = tempfile::tempdir().unwrap();
+        let vhd = t.path().join("emmc.vhd").display().to_string();
+        let disk_size: u64 = 64 << 20;
+        let Some(out) =
+            diskpart(&[format!("create vdisk file=\"{vhd}\" maximum=64 type=fixed"), "attach vdisk".into()])
+        else {
+            eprintln!("not run: needs administrator rights");
+            return;
+        };
+        assert!(out.status.success(), "diskpart: {}", String::from_utf8_lossy(&out.stdout));
+        let _attached = Attached(vhd);
+        let find = || {
+            let all = crate::windows::probe().unwrap();
+            let mut ours =
+                all.iter().filter(|p| p.size == disk_size && !p.boot && !p.system && p.bus.contains("Virtual"));
+            let one = ours.next().cloned();
+            assert!(ours.next().is_none(), "more than one 64 MB virtual disk: {all:?}");
+            one.unwrap_or_else(|| panic!("the virtual disk is not among {all:?}"))
+        };
+        let emmc = find();
+
+        // A volume on it, mounted: Windows refuses to write into it through the disk.
+        let out = diskpart(&[
+            format!("select disk {}", emmc.number),
+            "create partition primary".into(),
+            "format fs=fat32 quick".into(),
+            "assign".into(),
+        ])
+        .unwrap();
+        assert!(out.status.success(), "diskpart: {}", String::from_utf8_lossy(&out.stdout));
+        crate::windows::clean_disk(&emmc.path, &emmc.bus).unwrap();
+        // Still the same disk under the same path.
+        assert_eq!(find().path, emmc.path);
+
+        let image = t.path().join("img.raw");
+        let size = (CHUNK * 2 + 4096) as u64;
+        let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&image, &data).unwrap();
+        let patch = vec![0xAAu8; 10_000];
+        let src = Source { raw: &image, size, patch_offset: CHUNK as u64 - 5000, patch: &patch };
+        let noop = |_e: Event| {};
+        let path = Path::new(&emmc.path);
+        let mut input = File::open(&image).unwrap();
+        let mut disk = OpenOptions::new().read(true).write(true).open(path).unwrap();
+        write_to(&src, &mut input, &mut disk, path, &noop, &Cancel::new()).unwrap();
+        disk.seek(SeekFrom::Start(0)).unwrap();
+        verify_from(&src, &mut disk, path, &noop, &Cancel::new()).unwrap();
+
+        // One changed sector must fail the verify.
+        disk.seek(SeekFrom::Start(8192)).unwrap();
+        disk.write_all(&[0x55u8; 512]).unwrap();
+        disk.seek(SeekFrom::Start(0)).unwrap();
+        let err = verify_from(&src, &mut disk, path, &noop, &Cancel::new()).unwrap_err();
+        assert!(err.to_string().contains("at byte 8192"), "{err}");
+    }
+
     #[test]
     fn file_target_never_writes_a_device_or_the_source() {
         let t = tempfile::tempdir().unwrap();
@@ -517,6 +611,7 @@ mod tests {
         let src = Source { raw: &raw, size: 8192, patch_offset: 0, patch: &[] };
         let noop = |_e: Event| {};
         // /dev/null is a character device: refused before anything is written.
+        #[cfg(unix)]
         assert!(write(&src, &Target::File("/dev/null".into()), &noop, &Cancel::new()).is_err());
         assert!(write(&src, &Target::File(raw.clone()), &noop, &Cancel::new()).is_err());
         assert_eq!(std::fs::read(&raw).unwrap(), vec![1u8; 8192]);

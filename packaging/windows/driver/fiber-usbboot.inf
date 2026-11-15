@@ -1,0 +1,55 @@
+; FIBER Setup: the USB driver for a FIBER in USB mode (jumper on BOOT).
+;
+; In that mode the FIBER's Raspberry Pi Compute Module shows its boot ROM on USB, and Windows has
+; no driver for it. This binds the boot ROM to WinUSB, the driver that is part of Windows, so
+; rpiboot can talk to it. It installs no file: it only tells Windows which of its own drivers
+; to use. The same four devices as Raspberry Pi's rpiboot installer.
+;
+; The catalog (fiber-usbboot.cat) is made from this file and signed by HARDWARIO a.s. when a
+; release is built (docs/release.md); any change here needs a new catalog.
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = USBDevice
+ClassGuid   = {88BAE032-5A81-49f0-BC3D-A4FF138216D6}
+Provider    = %Provider%
+CatalogFile = fiber-usbboot.cat
+DriverVer   = 11/15/2026,1.0.0.0
+PnpLockdown = 1
+
+[Manufacturer]
+%Provider% = Devices,NTamd64,NTarm64
+
+[Devices.NTamd64]
+%BCM2708% = WinUsb_Install, USB\VID_0A5C&PID_2763
+%BCM2710% = WinUsb_Install, USB\VID_0A5C&PID_2764
+%BCM2711% = WinUsb_Install, USB\VID_0A5C&PID_2711
+%BCM2712% = WinUsb_Install, USB\VID_0A5C&PID_2712
+
+[Devices.NTarm64]
+%BCM2708% = WinUsb_Install, USB\VID_0A5C&PID_2763
+%BCM2710% = WinUsb_Install, USB\VID_0A5C&PID_2764
+%BCM2711% = WinUsb_Install, USB\VID_0A5C&PID_2711
+%BCM2712% = WinUsb_Install, USB\VID_0A5C&PID_2712
+
+[WinUsb_Install]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[WinUsb_Install.Services]
+Include = winusb.inf
+Needs   = WINUSB.NT.Services
+
+[WinUsb_Install.HW]
+AddReg = Interface_AddReg
+
+; The interface libusb (and so rpiboot) opens the device by.
+[Interface_AddReg]
+HKR,,DeviceInterfaceGUIDs,0x10000,"{D0F175E3-D514-4713-B4D3-0C47B2FF7FCC}"
+
+[Strings]
+Provider = "HARDWARIO a.s."
+BCM2708  = "Raspberry Pi USB boot (BCM2708)"
+BCM2710  = "Raspberry Pi USB boot (BCM2710)"
+BCM2711  = "Raspberry Pi USB boot (BCM2711, HARDWARIO FIBER)"
+BCM2712  = "Raspberry Pi USB boot (BCM2712)"
