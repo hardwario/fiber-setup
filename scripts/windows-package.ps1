@@ -42,7 +42,9 @@ function Find-MakeNsis {
 function Invoke-MakeNsis([string[]]$Defines) {
   $makensis = Find-MakeNsis
   "NSIS $(& $makensis /VERSION) ($makensis)"
-  $arguments = @('/V2', '/INPUTCHARSET', 'UTF8', "/DVERSION=$version") + $Defines + (Join-Path $root 'packaging\windows\installer.nsi')
+  # Windows wants four numbers for a file's version: 1.2.3.0, also for 1.2.3-rc.1.
+  $numeric = ($version -split '[-+]')[0] + '.0'
+  $arguments = @('/V2', '/INPUTCHARSET', 'UTF8', "/DVERSION=$version", "/DVERSION_NUMERIC=$numeric") + $Defines + (Join-Path $root 'packaging\windows\installer.nsi')
   & $makensis @arguments
   if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
 }

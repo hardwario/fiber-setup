@@ -12,6 +12,7 @@
 ;
 ; Given on the command line:
 ;   /DVERSION=1.2.3          the app's version
+;   /DVERSION_NUMERIC=1.2.3.0  the same as the four numbers Windows wants
 ;   /DAPP_DIR=<dir>          fiber-setup.exe and the usbboot folder, as they will be installed
 ;   /DOUT_FILE=<file>        what to write
 ;   /DUNINSTALLER=<file>     pass 2: the uninstall.exe to install
@@ -37,7 +38,7 @@ Name "${PRODUCT}"
 OutFile "${OUT_FILE}"
 InstallDir "$PROGRAMFILES64\${PRODUCT}"
 BrandingText "${PRODUCT} ${VERSION}"
-VIProductVersion "${VERSION}.0"
+VIProductVersion "${VERSION_NUMERIC}"
 VIAddVersionKey "ProductName" "${PRODUCT}"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
 VIAddVersionKey "LegalCopyright" "© 2026 ${PUBLISHER}"
