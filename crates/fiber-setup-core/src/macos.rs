@@ -232,11 +232,7 @@ pub fn disks_of(devices: &[UsbDevice]) -> Vec<BlockDevice> {
 
 /// The boards on USB, as [`crate::usb::boards`] gives them.
 pub fn boards() -> Vec<UsbBoard> {
-    let devices = usb_devices().unwrap_or_else(|e| {
-        tracing::warn!("looking for USB devices: {e:#}");
-        Vec::new()
-    });
-    boards_of(&devices)
+    boards_of(&usb_devices().unwrap_or_default())
 }
 
 /// A Broadcom device is a board when it is a boot ROM, or when the CM4's eMMC is behind it: the

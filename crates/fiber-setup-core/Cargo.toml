@@ -12,7 +12,6 @@ rust-version.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tracing.workspace = true
 fatfs = "0.3"
 getrandom = "0.3"
 hex = "0.4"
