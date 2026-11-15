@@ -48,7 +48,8 @@ libusb too, from its pinned source release, and both come out for Apple silicon 
 
 Release build: `npx tauri build` gives `target/release/fiber-setup` and, in `target/release/bundle/`, the
 AppImage and .deb on Linux, `FIBER Setup.app` and the .dmg on macOS (with `CI=true` the .dmg is made
-without opening a Finder window).
+without opening a Finder window). The releases on GitHub are built, signed and notarized by the Release
+workflow: [docs/release.md](docs/release.md).
 
 Demo: `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) runs the app on the same simulated FIBER, all steps
 from download to "Set up another FIBER", without touching USB or the network. The title says "(demo)".
@@ -74,7 +75,8 @@ The steps are the same; three things under them differ.
 
 The bundle carries its own rpiboot and libusb (`npm run usbboot` builds both), so the app needs nothing
 installed where it runs. A copy built by hand is not signed with a Developer ID and not notarized: it starts
-on the Mac that built it, and Gatekeeper stops it elsewhere.
+on the Mac that built it, and Gatekeeper stops it elsewhere. The released dmg is signed and notarized
+([docs/release.md](docs/release.md)).
 
 ## Command line
 
@@ -105,7 +107,7 @@ npm run build
   to install the software; not tried with the HARDWARIO Manager app yet.
 - A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
 - Windows.
-- macOS: a signed and notarized build, and a first write to a real FIBER (see the status above).
+- macOS: a first write to a real FIBER (see the status above).
 
 ## Pictures
 
