@@ -9,8 +9,6 @@
   const name = $derived(wizard.found?.name ?? f.hostname);
 </script>
 
-<p class="lead">{t().done.lead}</p>
-
 <section class="card pad">
   <h2><Icon name="terminal" size={16} /> {t().done.loginTitle}</h2>
   <p class="muted">{t().done.loginHint}</p>
@@ -54,14 +52,16 @@
   .summary {
     gap: 10px;
   }
+  /* A value that needs two lines keeps its name and glyph on its first one. */
   .row {
     display: flex;
     flex-wrap: wrap;
     overflow-wrap: anywhere;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
   }
   .row :global(svg) {
+    margin-top: 3px;
     color: var(--text-muted);
   }
   .k {

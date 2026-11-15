@@ -23,13 +23,6 @@
   });
 </script>
 
-<section class="card pad">
-  <Steps
-    items={t().restart.steps}
-    photos={{ 1: { src: reset, caption: t().restart.caption }, 3: { src: ethernet, caption: t().restart.ethernet } }}
-  />
-</section>
-
 {#if backInBoot}
   <div class="note warning"><Icon name="warning" size={16} /><span>{t().restart.stillBoot}</span></div>
 {:else if inUsb}
@@ -37,3 +30,10 @@
 {:else if seen}
   <div class="note good"><Icon name="circle-check" size={16} /><span>{t().restart.left}</span></div>
 {/if}
+
+<section class="card pad">
+  <Steps
+    items={t().restart.steps}
+    photos={{ 1: { src: reset, caption: t().restart.caption }, 3: { src: ethernet, caption: t().restart.ethernet } }}
+  />
+</section>

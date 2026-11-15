@@ -5,10 +5,11 @@
 
   let {
     value = $bindable(),
+    id,
     autocomplete = "off",
     icon = "lock",
     onblur,
-  }: { value: string; autocomplete?: "off" | "new-password"; icon?: string; onblur?: () => void } = $props();
+  }: { value: string; id?: string; autocomplete?: "off" | "new-password"; icon?: string; onblur?: () => void } = $props();
   let shown = $state(false);
 </script>
 
@@ -17,6 +18,7 @@
   <input
     class="input wide"
     type={shown ? "text" : "password"}
+    {id}
     bind:value
     {autocomplete}
     {onblur}

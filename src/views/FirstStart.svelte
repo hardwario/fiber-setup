@@ -38,16 +38,6 @@
   );
 </script>
 
-<p class="lead">{t().start.lead}</p>
-
-<section class="card pad">
-  <ol class="timeline">
-    {#each timeline as item, i (i)}
-      <li><span class="glyph"><Icon name={GLYPHS[i] ?? "clock"} size={16} /></span><span>{item}</span></li>
-    {/each}
-  </ol>
-</section>
-
 <section class="card pad" class:good={!!wizard.found}>
   {#if wizard.found}
     <div class="state found">
@@ -69,8 +59,18 @@
 </section>
 
 <section class="card pad">
-  <h2><Icon name="monitor" size={16} /> {t().start.displayTitle}</h2>
-  <p>{t().start.display}</p>
+  <ol class="timeline">
+    {#each timeline as item, i (i)}
+      <li><span class="glyph"><Icon name={GLYPHS[i] ?? "clock"} size={16} /></span><span>{item}</span></li>
+    {/each}
+  </ol>
+</section>
+
+<section class="card pad display">
+  <div class="about">
+    <h2><Icon name="monitor" size={16} /> {t().start.displayTitle}</h2>
+    <p>{t().start.display}</p>
+  </div>
   <img class="product" src={fiber} alt="HARDWARIO FIBER" />
 </section>
 
@@ -126,12 +126,31 @@
   p {
     margin: 0;
   }
+  /* The text and, beside it, what it talks about. */
+  .card.pad.display {
+    flex-direction: row;
+    align-items: center;
+    gap: 20px;
+  }
+  .about {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
   /* The picture is square with the FIBER in its middle: only that middle band is shown. */
   .product {
     display: block;
-    width: 100%;
-    max-width: 300px;
+    width: 200px;
+    flex-shrink: 0;
     aspect-ratio: 10 / 7;
     object-fit: cover;
+  }
+  @media (max-width: 720px) {
+    .card.pad.display {
+      flex-direction: column;
+      align-items: flex-start;
+    }
   }
 </style>

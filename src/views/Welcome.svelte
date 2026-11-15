@@ -7,8 +7,6 @@
   const NEEDS = ["plug", "usb", "wrench", "wifi"];
 </script>
 
-<p class="lead">{t().welcome.lead}</p>
-
 <img class="product" src={fiber} alt="HARDWARIO FIBER" />
 
 <section class="card pad">
@@ -32,7 +30,7 @@
   .product {
     display: block;
     width: 100%;
-    max-width: 340px;
+    max-width: 280px;
     aspect-ratio: 3 / 2;
     object-fit: cover;
     margin: 0 auto;

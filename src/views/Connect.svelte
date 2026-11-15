@@ -51,28 +51,6 @@
   <div class="note critical"><Icon name="warning" size={16} /><span>{t().connect.toolsMissing}</span></div>
 {/if}
 
-<section class="card pad">
-  <Steps items={t().connect.steps} photos={{ 2: { src: usb, caption: t().connect.caption } }} />
-</section>
-
-{#if access && !access.rules_installed}
-  <section class="card pad access">
-    <h2><Icon name="shield" size={16} /> {text.title}</h2>
-    <p>{text.text}</p>
-    <div>
-      <button class="btn primary" disabled={wizard.accessBusy} onclick={() => wizard.allowAccess()}>
-        {#if wizard.accessBusy}<Icon name="loader" size={14} />{:else}<Icon name="lock" size={14} />{/if}
-        {text.button}
-      </button>
-    </div>
-    {#if wizard.accessError}
-      <div class="note critical">
-        <Icon name="warning" size={16} /><span>{fill(text.failed, { error: wizard.accessError })}</span>
-      </div>
-    {/if}
-  </section>
-{/if}
-
 <section class="card pad status" class:good={!!board}>
   {#if board}
     <div class="state found">
@@ -100,6 +78,28 @@
   {#if access?.rules_installed && wizard.info?.os !== "macos"}
     <p class="muted small ok"><Icon name="check" size={12} /> {text.done}</p>
   {/if}
+</section>
+
+{#if access && !access.rules_installed}
+  <section class="card pad access">
+    <h2><Icon name="shield" size={16} /> {text.title}</h2>
+    <p>{text.text}</p>
+    <div>
+      <button class="btn primary" disabled={wizard.accessBusy} onclick={() => wizard.allowAccess()}>
+        {#if wizard.accessBusy}<Icon name="loader" size={14} />{:else}<Icon name="lock" size={14} />{/if}
+        {text.button}
+      </button>
+    </div>
+    {#if wizard.accessError}
+      <div class="note critical">
+        <Icon name="warning" size={16} /><span>{fill(text.failed, { error: wizard.accessError })}</span>
+      </div>
+    {/if}
+  </section>
+{/if}
+
+<section class="card pad">
+  <Steps items={t().connect.steps} photos={{ 2: { src: usb, caption: t().connect.caption } }} />
 </section>
 
 <style>

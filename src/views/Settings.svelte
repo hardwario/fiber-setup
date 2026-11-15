@@ -32,70 +32,106 @@
   ]);
 </script>
 
-<p class="lead">{t().settings.lead}</p>
-
+<!-- Each setting is one line: its name on the left, the field on the right. The names make a
+     column the eye runs down, and the fields fill the box. -->
 <section class="card pad">
   <h2><Icon name="monitor" size={16} /> {t().settings.device}</h2>
-  <div class="fields">
+  <div class="lines">
     {#if f.installFiber}
-      <div class="field">
-        <span>{t().settings.hostname}</span>
-        <div class="control">
-          <Icon name="monitor" size={15} />
-          <div class="input wide mono fixed">{t().start.hubUnknown}</div>
+      <div class="line">
+        <span class="name">{t().settings.hostname}</span>
+        <div class="value">
+          <div class="control">
+            <Icon name="monitor" size={15} />
+            <div class="input wide mono fixed">{t().start.hubUnknown}</div>
+          </div>
+          <span class="hint">{t().settings.hostnameFiber}</span>
         </div>
-        <span class="hint">{t().settings.hostnameFiber}</span>
       </div>
     {:else}
-      <label class="field">
-        <span>{t().settings.hostname}</span>
-        <div class="control">
-          <Icon name="monitor" size={15} />
-          <input class="input wide mono" bind:value={f.hostname} onblur={touch("hostname")} spellcheck="false" autocomplete="off" />
+      <div class="line">
+        <label class="name" for="hostname">{t().settings.hostname}</label>
+        <div class="value">
+          <div class="control">
+            <Icon name="monitor" size={15} />
+            <input
+              id="hostname"
+              class="input wide mono"
+              bind:value={f.hostname}
+              onblur={touch("hostname")}
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </div>
+          {#if err("hostname")}<span class="error">{err("hostname")}</span>{:else}<span class="hint"
+              >{fill(t().settings.hostnameHint, { name: f.hostname || "fiber" })}</span
+            >{/if}
         </div>
-        {#if err("hostname")}<span class="error">{err("hostname")}</span>{:else}<span class="hint"
-            >{fill(t().settings.hostnameHint, { name: f.hostname || "fiber" })}</span
-          >{/if}
-      </label>
+      </div>
     {/if}
+    <div class="line">
+      <label class="name" for="timezone">{t().settings.timezone}</label>
+      <div class="value">
+        <SearchSelect id="timezone" choices={timezones} bind:value={f.timezone} placeholder={t().settings.typeToSearch} />
+        {#if err("timezone")}<span class="error">{err("timezone")}</span>{/if}
+      </div>
+    </div>
   </div>
 </section>
 
 <section class="card pad">
   <h2><Icon name="key" size={16} /> {t().settings.login}</h2>
-  <div class="fields">
-    <label class="field">
-      <span>{t().settings.user}</span>
-      <div class="control">
-        <Icon name="user" size={15} />
-        <input class="input wide mono" bind:value={f.username} onblur={touch("username")} spellcheck="false" autocomplete="off" />
+  <div class="lines">
+    <div class="line">
+      <label class="name" for="username">{t().settings.user}</label>
+      <div class="value">
+        <div class="control">
+          <Icon name="user" size={15} />
+          <input
+            id="username"
+            class="input wide mono"
+            bind:value={f.username}
+            onblur={touch("username")}
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
+        {#if err("username")}<span class="error">{err("username")}</span>{/if}
       </div>
-      {#if err("username")}<span class="error">{err("username")}</span>{/if}
-    </label>
-    <label class="field">
-      <span>{t().settings.password}</span>
-      <PasswordField bind:value={f.password} autocomplete="new-password" onblur={touch("password")} />
-      {#if err("password")}<span class="error">{err("password")}</span>{:else}<span class="hint"
-          >{fill(t().settings.passwordHint, { user: f.username })}</span
-        >{/if}
-    </label>
-    <label class="field">
-      <span>{t().settings.passwordAgain}</span>
-      <PasswordField bind:value={f.password2} autocomplete="new-password" onblur={touch("password2")} />
-      {#if err("password2")}<span class="error">{err("password2")}</span>{/if}
-    </label>
+    </div>
+    <div class="line">
+      <label class="name" for="password">{t().settings.password}</label>
+      <div class="value">
+        <PasswordField id="password" bind:value={f.password} autocomplete="new-password" onblur={touch("password")} />
+        {#if err("password")}<span class="error">{err("password")}</span>{:else}<span class="hint"
+            >{fill(t().settings.passwordHint, { user: f.username })}</span
+          >{/if}
+      </div>
+    </div>
+    <div class="line">
+      <label class="name" for="password2">{t().settings.passwordAgain}</label>
+      <div class="value">
+        <PasswordField id="password2" bind:value={f.password2} autocomplete="new-password" onblur={touch("password2")} />
+        {#if err("password2")}<span class="error">{err("password2")}</span>{/if}
+      </div>
+    </div>
+    <div class="line">
+      <span class="name">{t().settings.sshKeyName}</span>
+      <div class="value">
+        {#if info?.defaults.ssh_key}
+          <label class="check">
+            <input type="checkbox" bind:checked={f.useSshKey} />
+            <span>
+              {t().settings.sshKey}
+              <span class="hint block mono">{fill(t().settings.sshKeyFrom, { path: info.defaults.ssh_key_path ?? "" })}</span>
+            </span>
+          </label>
+        {:else}
+          <span class="hint none">{t().settings.noSshKey}</span>
+        {/if}
+      </div>
+    </div>
   </div>
-  {#if info?.defaults.ssh_key}
-    <label class="check">
-      <input type="checkbox" bind:checked={f.useSshKey} />
-      <span>
-        {t().settings.sshKey}
-        <span class="hint block mono">{fill(t().settings.sshKeyFrom, { path: info.defaults.ssh_key_path ?? "" })}</span>
-      </span>
-    </label>
-  {:else}
-    <p class="muted small"><Icon name="key" size={12} /> {t().settings.noSshKey}</p>
-  {/if}
 </section>
 
 <section class="card pad">
@@ -114,26 +150,30 @@
           </span>
         </label>
         {#if chosen && n.value === "wifi"}
-          <div class="more fields">
-            <label class="field">
-              <span>{t().settings.ssid}</span>
-              <div class="control">
-                <Icon name="wifi" size={15} />
-                <input class="input wide" bind:value={f.ssid} onblur={touch("ssid")} spellcheck="false" autocomplete="off" />
+          <div class="more lines">
+            <div class="line">
+              <label class="name" for="ssid">{t().settings.ssid}</label>
+              <div class="value">
+                <div class="control">
+                  <Icon name="wifi" size={15} />
+                  <input id="ssid" class="input wide" bind:value={f.ssid} onblur={touch("ssid")} spellcheck="false" autocomplete="off" />
+                </div>
+                {#if err("ssid")}<span class="error">{err("ssid")}</span>{/if}
               </div>
-              {#if err("ssid")}<span class="error">{err("ssid")}</span>{/if}
-            </label>
-            <label class="field">
-              <span>{t().settings.wifiPassword}</span>
-              <PasswordField bind:value={f.wifiPassword} onblur={touch("wifiPassword")} />
-              {#if err("wifiPassword")}<span class="error">{err("wifiPassword")}</span>{:else}<span class="hint"
-                  >{t().settings.wifiPasswordHint}</span
-                >{/if}
-            </label>
-            <label class="check">
-              <input type="checkbox" bind:checked={f.hidden} />
-              <span>{t().settings.hidden}</span>
-            </label>
+            </div>
+            <div class="line">
+              <label class="name" for="wifi-password">{t().settings.wifiPassword}</label>
+              <div class="value">
+                <PasswordField id="wifi-password" bind:value={f.wifiPassword} onblur={touch("wifiPassword")} />
+                {#if err("wifiPassword")}<span class="error">{err("wifiPassword")}</span>{:else}<span class="hint"
+                    >{t().settings.wifiPasswordHint}</span
+                  >{/if}
+                <label class="check">
+                  <input type="checkbox" bind:checked={f.hidden} />
+                  <span>{t().settings.hidden}</span>
+                </label>
+              </div>
+            </div>
           </div>
         {:else if chosen && n.value === "ethernet"}
           <div class="more"><p class="muted">{t().settings.ethernetHint}</p></div>
@@ -143,25 +183,18 @@
       </div>
     {/each}
   </div>
-  {#if networkError}<div class="note critical"><Icon name="warning" size={16} /><span>{networkError}</span></div>{/if}
-</section>
-
-<section class="card pad">
-  <h2><Icon name="gps" size={16} /> {t().settings.region}</h2>
-  <div class="fields">
-    {#if f.network !== "ethernet"}
-      <div class="field">
-        <label for="country">{t().settings.country}</label>
-        <SearchSelect id="country" choices={countries} bind:value={f.country} placeholder={t().settings.typeToSearch} />
-        <span class="hint">{t().settings.countryHint}</span>
+  {#if f.network !== "ethernet"}
+    <div class="lines">
+      <div class="line">
+        <label class="name" for="country">{t().settings.country}</label>
+        <div class="value">
+          <SearchSelect id="country" choices={countries} bind:value={f.country} placeholder={t().settings.typeToSearch} />
+          <span class="hint">{t().settings.countryHint}</span>
+        </div>
       </div>
-    {/if}
-    <div class="field">
-      <label for="timezone">{t().settings.timezone}</label>
-      <SearchSelect id="timezone" choices={timezones} bind:value={f.timezone} placeholder={t().settings.typeToSearch} />
-      {#if err("timezone")}<span class="error">{err("timezone")}</span>{/if}
     </div>
-  </div>
+  {/if}
+  {#if networkError}<div class="note critical"><Icon name="warning" size={16} /><span>{networkError}</span></div>{/if}
 </section>
 
 <section class="card pad">
@@ -176,18 +209,49 @@
 </section>
 
 <style>
-  /* One field under the other, all of one width: the eye goes straight down. */
-  .fields {
+  .lines {
     display: flex;
     flex-direction: column;
     gap: 14px;
-    max-width: 460px;
+  }
+  .line {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 4px 20px;
+    align-items: start;
+  }
+  /* In line with the text in its field. */
+  .name {
+    padding-top: 7px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .value {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
   }
   .fixed {
     display: flex;
     align-items: center;
     color: var(--text-2);
     background: var(--surface-2);
+  }
+  .hint {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .hint.none {
+    padding-top: 8px;
+  }
+  .error {
+    font-size: 12px;
+    color: var(--critical);
+  }
+  .block {
+    display: block;
   }
   .choices {
     display: flex;
@@ -251,9 +315,16 @@
     font-size: 12.5px;
     color: var(--text-muted);
   }
-  /* What the chosen way needs, inside its box, in line with its title. */
+  /* What the chosen way needs, inside its box. Its names line up with the ones outside:
+     190 px less the box's own 15.5 px of border and padding. */
   .more {
-    padding: 2px 14px 14px 90px;
+    padding: 4px 14px 14px;
+  }
+  .more .line {
+    grid-template-columns: 174.5px minmax(0, 1fr);
+  }
+  .more p {
+    padding-left: 76px;
   }
   .check {
     display: flex;
@@ -261,26 +332,26 @@
     align-items: flex-start;
     cursor: pointer;
   }
+  .value > .check {
+    padding-top: 6px;
+  }
   .check input {
     margin-top: 3px;
     accent-color: var(--accent);
   }
-  .hint {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .block {
-    display: block;
-  }
-  .small {
-    font-size: 12.5px;
-  }
   p {
     margin: 0;
   }
-  @media (max-width: 620px) {
-    .more {
-      padding-left: 14px;
+  @media (max-width: 720px) {
+    .line,
+    .more .line {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .name {
+      padding-top: 0;
+    }
+    .more p {
+      padding-left: 0;
     }
   }
 </style>

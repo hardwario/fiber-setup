@@ -81,7 +81,7 @@ export const cs: Messages = {
   },
   image: {
     title: "Software FIBERu",
-    lead: "FIBER běží na Raspberry Pi OS Lite. Při prvním startu si sám nainstaluje software FIBERu, instalátorem HARDWARIO na jeden příkaz (nejnovější vydání fiber-agent).",
+    lead: "Fungující FIBER tvoří dvě věci: operační systém, který se zapíše teď, a software FIBERu, který si FIBER nainstaluje sám při prvním startu.",
     system: "Operační systém",
     official: "Oficiální obraz, ověřený podle zveřejněného kontrolního součtu",
     custom: "Váš vlastní soubor s obrazem, není mezi známými",
@@ -92,7 +92,10 @@ export const cs: Messages = {
     reuse: "Našla se kopie, kterou dříve stáhl Raspberry Pi Imager; před použitím se ověří.",
     cache: "Zůstává v počítači pro další FIBER, stahuje se jen jednou.",
     failed: "Obraz se nepodařilo připravit: {error}",
-    next: "Připravujeme: hotový obraz FIBERu se softwarem uvnitř, takže první start nebude potřebovat internet.",
+    fiber: "Software FIBERu",
+    fiberText: "FIBER si ho nainstaluje sám při prvním startu, z internetu (nejnovější vydání). Asi 10 minut.",
+    fiberOff: "Neinstaluje se: je vypnutý v nastavení. Ve FIBERu zůstane čisté Raspberry Pi OS.",
+    later: "Při prvním startu",
   },
   settings: {
     title: "Nastavení",
@@ -118,7 +121,6 @@ export const cs: Messages = {
     wifiPassword: "Heslo Wi-Fi",
     wifiPasswordHint: "U otevřené sítě nechte prázdné.",
     hidden: "Skrytá síť",
-    region: "Region",
     country: "Země",
     countryHint: "Kde bude FIBER použit: určuje kanály a výkon Wi-Fi, které jsou tam povolené.",
     ethernetHint: "Připojte FIBER do sítě kabelem (port LAN na PoE injektoru). Adresu dostane přes DHCP.",
@@ -126,12 +128,14 @@ export const cs: Messages = {
     installFiber: "Při prvním startu nainstalovat software FIBERu",
     installFiberHint: "Při prvním startu potřebuje internet. Bez této volby zůstane ve FIBERu čisté Raspberry Pi OS.",
     user: "Uživatelské jméno",
+    sshKeyName: "Klíč SSH",
     sshKey: "Povolit přihlášení i klíčem SSH z tohoto počítače",
     sshKeyFrom: "Ze souboru {path}",
     noSshKey: "V ~/.ssh na tomto počítači není žádný klíč SSH.",
     timezone: "Časové pásmo",
     timezoneNone: "Nenastaveno (UTC)",
     typeToSearch: "Pište pro hledání…",
+    fix: "Zkontrolujte označená pole.",
     err: {
       hostname: "Jen a-z, 0-9 a '-', ne na začátku ani na konci.",
       password: "Zadejte heslo.",
@@ -158,6 +162,9 @@ export const cs: Messages = {
   },
   connect: {
     title: "Připojte FIBER",
+    lead: "Připojte FIBER. Aplikace ho najde sama a pokračuje.",
+    needAccess: "Pro pokračování povolte přístup k USB.",
+    needDriver: "Pro pokračování nainstalujte ovladač USB.",
     steps: [
       "Propojte tento počítač s FIBERem kabelem USB-B.",
       "Zapojte napájení FIBERu.",
@@ -184,8 +191,11 @@ export const cs: Messages = {
   },
   write: {
     title: "Zápis do FIBERu",
-    lead: "Do paměti FIBERu se zapíše {image} s vaším nastavením. Vše, co v ní je teď, bude nahrazeno.",
+    lead: "Zkontrolujte, co se do FIBERu zapíše, a spusťte zápis. Trvá asi 5 minut.",
     start: "Zapsat do FIBERu",
+    what: "Co se do FIBERu zapíše",
+    plan: "Co se stane",
+    writing: "Zapisuje se…",
     keep: "Nechte kabel připojený, dokud zápis neskončí.",
     macPassword: "macOS se zeptá na vaše heslo, než této aplikaci dovolí zapsat paměť FIBERu.",
     doneTitle: "Zapsáno a zkontrolováno",
@@ -197,6 +207,7 @@ export const cs: Messages = {
   },
   restart: {
     title: "Spusťte FIBER",
+    lead: "FIBER je zapsaný. Vyveďte ho z režimu USB a nechte ho nastartovat.",
     steps: [
       "Sundejte propojku z BOOT a nasaďte ji zpět jen na jeden kolík BOOT: tam nic nespojuje a neztratí se. Napájení a kabel USB-B nechte zapojené.",
       "Stiskněte tlačítko RESET vedle konektoru USB. FIBER dostane z režimu USB jen RESET, odpojení napájení nestačí.",

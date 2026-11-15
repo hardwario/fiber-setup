@@ -5,8 +5,6 @@
   import { t } from "../lib/i18n/index.svelte";
 </script>
 
-<p class="lead">{t().jumper.lead}</p>
-
 <section class="card pad">
   <Steps
     items={t().jumper.steps}

@@ -58,7 +58,40 @@
     start: t().start.title,
     done: t().done.title,
   });
+  /** One or two sentences under the title: what this step is for. */
+  const leads = $derived({
+    welcome: t().welcome.lead,
+    image: t().image.lead,
+    settings: t().settings.lead,
+    jumper: t().jumper.lead,
+    connect: t().connect.lead,
+    write: t().write.lead,
+    restart: t().restart.lead,
+    start: t().start.lead,
+    done: t().done.lead,
+  });
   const last = $derived(wizard.index === STEPS.length - 1);
+  /** On the Write step the bar's button writes; once written it is Next again. */
+  const toWrite = $derived(wizard.step === "write" && !wizard.flash.result);
+  /** Next to the bar's button: what the step waits for, so a greyed Next explains itself. */
+  const hint = $derived.by((): { text: string; busy: boolean } | null => {
+    switch (wizard.step) {
+      case "image":
+        return wizard.image.busy ? { text: t().image.preparing, busy: true } : null;
+      case "settings":
+        return Object.keys(wizard.errors).some((k) => wizard.touched[k]) ? { text: t().settings.fix, busy: false } : null;
+      case "connect":
+        if (!wizard.port) return { text: t().connect.waiting, busy: true };
+        if (wizard.access && !wizard.access.rules_installed) {
+          return { text: wizard.info?.os === "windows" ? t().connect.needDriver : t().connect.needAccess, busy: false };
+        }
+        return null;
+      case "write":
+        return wizard.flash.busy ? { text: t().write.keep, busy: false } : null;
+      default:
+        return null;
+    }
+  });
   /** A step that is behind the user; all of them once the last one is reached. */
   const completed = (i: number) => i < wizard.reached || wizard.reached === STEPS.length - 1;
   const busy = $derived(wizard.flash.busy);
@@ -79,10 +112,7 @@
       {#if collapsed}
         <img src={prefs.effectiveTheme === "dark" ? symbolReversed : symbol} alt="HARDWARIO FIBER" width="22" height="28" />
       {:else}
-        <div class="wordmark">
-          <img class="logo" src={prefs.effectiveTheme === "dark" ? logoReversed : logo} alt="HARDWARIO FIBER" />
-          <span class="setup">Setup</span>
-        </div>
+        <img class="logo" src={prefs.effectiveTheme === "dark" ? logoReversed : logo} alt="HARDWARIO FIBER" />
       {/if}
     </div>
     <!-- The steps in their three parts (Prepare, Write, Start), each step by its glyph: nine steps
@@ -176,13 +206,14 @@
       <div class="center muted">{t().common.loading}</div>
     {:else}
       <div class="view">
-        <div class="page-head" class:finished={last}>
+        <header class="page-head" class:finished={last}>
           <div class="glyph"><Icon name={STEP_ICONS[wizard.step]} size={24} /></div>
-          <div>
+          <div class="titles">
             <div class="step-of">{fill(t().common.stepOf, { n: wizard.index + 1, total: STEPS.length })}</div>
             <h1>{titles[wizard.step]}</h1>
+            <p class="lead">{leads[wizard.step]}</p>
           </div>
-        </div>
+        </header>
         {#if wizard.step === "welcome"}
           <Welcome />
         {:else if wizard.step === "image"}
@@ -210,14 +241,35 @@
               <Icon name="arrow-left" size={15} />
               {t().common.back}
             </button>
-            <button
-              class="btn primary large"
-              disabled={busy || (!wizard.canNext && wizard.step !== "settings")}
-              onclick={() => wizard.next()}
-            >
-              {wizard.step === "start" ? t().start.finish : t().common.next}
-              <Icon name="arrow-right" size={15} />
-            </button>
+            <div class="forward">
+              {#if hint}
+                <span class="hint">{#if hint.busy}<Icon name="loader" size={14} />{/if}<span>{hint.text}</span></span>
+              {/if}
+              {#if busy}
+                <button class="btn large" onclick={() => wizard.cancel()}>{t().common.cancel}</button>
+              {/if}
+              {#if toWrite}
+                <!-- The step's one action, where the eye already is for Next. -->
+                <button class="btn primary large" disabled={busy} onclick={() => wizard.startFlash()}>
+                  {#if busy}
+                    <Icon name="loader" size={15} />
+                    {t().write.writing}
+                  {:else}
+                    <Icon name="drive" size={15} />
+                    {wizard.flash.error ? t().common.retry : t().write.start}
+                  {/if}
+                </button>
+              {:else}
+                <button
+                  class="btn primary large"
+                  disabled={busy || (!wizard.canNext && wizard.step !== "settings")}
+                  onclick={() => wizard.next()}
+                >
+                  {wizard.step === "start" ? t().start.finish : t().common.next}
+                  <Icon name="arrow-right" size={15} />
+                </button>
+              {/if}
+            </div>
           </div>
         </footer>
       {/if}
@@ -255,8 +307,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 4px 8px;
-    margin: -2px 0;
+    padding: 4px 8px 8px;
   }
   .collapsed .brand {
     justify-content: center;
@@ -266,23 +317,10 @@
     display: block;
     flex-shrink: 0;
   }
-  .wordmark {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    width: 100%;
-  }
-  .wordmark .logo {
+  .brand .logo {
     width: 150px;
     max-width: 100%;
     height: auto;
-  }
-  .setup {
-    padding-left: 1px;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1;
-    color: var(--text-muted);
   }
   .phases {
     display: flex;
@@ -463,14 +501,20 @@
     flex-direction: column;
     gap: 16px;
     width: 100%;
-    max-width: 780px;
+    max-width: 740px;
     margin: 0 auto;
-    padding: 24px 28px 28px;
+    padding: 28px 28px 32px;
   }
   .page-head {
     display: flex;
-    align-items: center;
-    gap: 14px;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 4px;
+  }
+  .titles {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
   .page-head .glyph {
     display: grid;
@@ -487,14 +531,20 @@
     color: var(--good);
   }
   .page-head h1 {
-    font-size: 22px;
-    letter-spacing: -0.01em;
+    font-size: 23px;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
   }
   .step-of {
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.02em;
     color: var(--accent);
-    margin-bottom: 2px;
+    margin-bottom: 1px;
+  }
+  .page-head .lead {
+    margin-top: 6px;
   }
   footer {
     position: sticky;
@@ -505,10 +555,33 @@
   }
   .footer-inner {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    max-width: 780px;
+    gap: 16px;
+    max-width: 740px;
     margin: 0 auto;
     padding: 12px 28px;
+  }
+  .forward {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    min-width: 0;
+  }
+  .forward .hint {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    margin-right: 4px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .forward .hint span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .center {
     display: grid;
@@ -519,14 +592,15 @@
   main :global(.lead) {
     margin: 0;
     font-size: 15px;
+    line-height: 1.5;
     color: var(--text-2);
-    max-width: 70ch;
+    max-width: 62ch;
   }
   main :global(.card.pad) {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px 18px;
+    gap: 14px;
+    padding: 18px 20px;
   }
   main :global(.card h2) {
     display: flex;

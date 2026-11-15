@@ -79,7 +79,7 @@ export const en = {
   },
   image: {
     title: "FIBER software",
-    lead: "The FIBER runs Raspberry Pi OS Lite. On its first start it installs the FIBER software by itself, with HARDWARIO's one-command installer (the latest fiber-agent release).",
+    lead: "Two things make up a working FIBER: the operating system, written now, and the FIBER software, which it installs by itself on its first start.",
     system: "Operating system",
     official: "Official image, checked against its published checksum",
     custom: "Your own image file, not a known one",
@@ -90,7 +90,10 @@ export const en = {
     reuse: "A copy downloaded earlier by Raspberry Pi Imager was found; it is checked before it is used.",
     cache: "Kept on this computer for the next FIBER, so it is downloaded only once.",
     failed: "Could not get the image: {error}",
-    next: "Coming next: a ready FIBER image with the software already inside, so the first start needs no internet.",
+    fiber: "FIBER software",
+    fiberText: "Installed by the FIBER itself on its first start, from the internet (the latest release). About 10 minutes.",
+    fiberOff: "Not installed: it is turned off in the settings. The FIBER gets a plain Raspberry Pi OS.",
+    later: "On the first start",
   },
   settings: {
     title: "Settings",
@@ -116,7 +119,6 @@ export const en = {
     wifiPassword: "Wi-Fi password",
     wifiPasswordHint: "Leave it empty for an open network.",
     hidden: "Hidden network",
-    region: "Region",
     country: "Country",
     countryHint: "Where the FIBER is used: sets the Wi-Fi channels and power allowed there.",
     ethernetHint: "Connect the FIBER to your network with a cable (the PoE injector's LAN port). It gets its address by DHCP.",
@@ -124,12 +126,14 @@ export const en = {
     installFiber: "Install the FIBER software on the first start",
     installFiberHint: "Needs the internet on the first start. Turned off, the FIBER gets a plain Raspberry Pi OS.",
     user: "User name",
+    sshKeyName: "SSH key",
     sshKey: "Also allow login with this computer's SSH key",
     sshKeyFrom: "From {path}",
     noSshKey: "No SSH key found in ~/.ssh on this computer.",
     timezone: "Time zone",
     timezoneNone: "Not set (UTC)",
     typeToSearch: "Type to search…",
+    fix: "Check the marked fields.",
     err: {
       hostname: "Use only a-z, 0-9 and '-', not at the start or end.",
       password: "Enter a password.",
@@ -156,6 +160,9 @@ export const en = {
   },
   connect: {
     title: "Connect the FIBER",
+    lead: "Plug the FIBER in. The app finds it by itself and goes on.",
+    needAccess: "Allow USB access to go on.",
+    needDriver: "Install the USB driver to go on.",
     steps: [
       "Connect the USB-B cable from this computer to the FIBER.",
       "Plug in the FIBER's power.",
@@ -182,8 +189,11 @@ export const en = {
   },
   write: {
     title: "Write the FIBER",
-    lead: "The FIBER's memory gets {image} with your settings. Everything on it now is replaced.",
+    lead: "Check what goes onto the FIBER, then write it. It takes about 5 minutes.",
+    what: "What goes onto the FIBER",
+    plan: "What happens",
     start: "Write the FIBER",
+    writing: "Writing…",
     keep: "Keep the cable connected until it is done.",
     macPassword: "macOS asks for your password before it lets this app write the FIBER's memory.",
     doneTitle: "Written and checked",
@@ -195,6 +205,7 @@ export const en = {
   },
   restart: {
     title: "Start the FIBER",
+    lead: "The FIBER is written. Take it out of USB mode and let it start.",
     steps: [
       "Take the jumper off BOOT and put it back on just one BOOT pin: there it connects nothing and does not get lost. Leave the power and the USB-B cable connected.",
       "Press the RESET button next to the USB connector. Only RESET takes the FIBER out of USB mode: unplugging the power does not.",
