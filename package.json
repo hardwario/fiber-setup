@@ -1,7 +1,7 @@
 {
   "name": "fiber-setup",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "FIBER Setup: flash a HARDWARIO FIBER (CM4) over its USB-B port, step by step",
   "license": "MIT",
   "author": "HARDWARIO a.s.",

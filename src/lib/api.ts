@@ -122,7 +122,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
   return {
     simulated: true,
     appInfo: async () => ({
-      version: "1.0.0",
+      version: "1.1.0",
       os: "linux",
       image,
       tools_found: true,
