@@ -1,0 +1,4 @@
+# Scripts run in bash on every system (Cygwin's on Windows), which wants plain line ends.
+*.sh text eol=lf
+# The driver description is hashed into its signed catalog: one form everywhere, Windows' own.
+*.inf text eol=crlf

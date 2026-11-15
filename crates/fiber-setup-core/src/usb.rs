@@ -1,6 +1,6 @@
 //! Raspberry Pi boards on USB: a FIBER with its jumper on BOOT shows up as the BCM2711 boot ROM
-//! (`0a5c:2711`), and after rpiboot as the mass-storage gadget. Found in sysfs on Linux and in
-//! the I/O Registry on macOS (`macos.rs`).
+//! (`0a5c:2711`), and after rpiboot as the mass-storage gadget. Found in sysfs on Linux, in
+//! the I/O Registry on macOS (`macos.rs`) and among Windows' USB devices (`windows.rs`).
 
 use serde::Serialize;
 use std::path::Path;
@@ -23,14 +23,15 @@ pub enum BoardKind {
 pub struct UsbBoard {
     /// The USB path of its port, e.g. `3-2` or `1-1.4`: the name rpiboot's `-p` takes and the
     /// name the gadget gets on the same port. On Linux the kernel's name for the port; on macOS
-    /// the same form from the device's location, as libusb (and so rpiboot) builds it there.
+    /// the same form from the device's location, as libusb (and so rpiboot) builds it there. On
+    /// Windows a name of that form from the device's location path, which rpiboot does not know.
     pub port: String,
     pub kind: BoardKind,
     pub product_id: String,
     pub serial: Option<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn boards() -> Vec<UsbBoard> {
     let emmc_ports: Vec<String> = crate::disk::list()
         .unwrap_or_default()
@@ -44,6 +45,11 @@ pub fn boards() -> Vec<UsbBoard> {
 #[cfg(target_os = "macos")]
 pub fn boards() -> Vec<UsbBoard> {
     crate::macos::boards()
+}
+
+#[cfg(windows)]
+pub fn boards() -> Vec<UsbBoard> {
+    crate::windows::boards()
 }
 
 /// The boards in a sysfs USB device directory (Linux).
@@ -85,7 +91,10 @@ pub fn boards_in(root: &Path, emmc_ports: &[String]) -> Vec<UsbBoard> {
     out
 }
 
+// Unix only: sysfs names a USB interface with a colon (`3-2:1.0`), which Windows allows in no
+// folder name.
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
 

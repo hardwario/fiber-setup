@@ -27,6 +27,24 @@
   const boards = $derived(wizard.boards);
   const access = $derived(wizard.access);
   const board = $derived(boards.find((b) => b.port === wizard.port));
+  // The same step is a permission on Linux and a driver on Windows.
+  const text = $derived(
+    wizard.info?.os === "windows"
+      ? {
+          title: t().connect.driverTitle,
+          text: t().connect.driverText,
+          button: t().connect.driverButton,
+          done: t().connect.driverDone,
+          failed: t().connect.driverFailed,
+        }
+      : {
+          title: t().connect.accessTitle,
+          text: t().connect.accessText,
+          button: t().connect.accessButton,
+          done: t().connect.accessDone,
+          failed: t().connect.accessFailed,
+        },
+  );
 </script>
 
 {#if wizard.info && !wizard.info.tools_found}
@@ -39,17 +57,17 @@
 
 {#if access && !access.rules_installed}
   <section class="card pad access">
-    <h2><Icon name="shield" size={16} /> {t().connect.accessTitle}</h2>
-    <p>{t().connect.accessText}</p>
+    <h2><Icon name="shield" size={16} /> {text.title}</h2>
+    <p>{text.text}</p>
     <div>
       <button class="btn primary" disabled={wizard.accessBusy} onclick={() => wizard.allowAccess()}>
         {#if wizard.accessBusy}<Icon name="loader" size={14} />{:else}<Icon name="lock" size={14} />{/if}
-        {t().connect.accessButton}
+        {text.button}
       </button>
     </div>
     {#if wizard.accessError}
       <div class="note critical">
-        <Icon name="warning" size={16} /><span>{fill(t().connect.accessFailed, { error: wizard.accessError })}</span>
+        <Icon name="warning" size={16} /><span>{fill(text.failed, { error: wizard.accessError })}</span>
       </div>
     {/if}
   </section>
@@ -80,7 +98,7 @@
     <p class="muted small">{t().connect.tip}</p>
   {/if}
   {#if access?.rules_installed && wizard.info?.os !== "macos"}
-    <p class="muted small ok"><Icon name="check" size={12} /> {t().connect.accessDone}</p>
+    <p class="muted small ok"><Icon name="check" size={12} /> {text.done}</p>
   {/if}
 </section>
 

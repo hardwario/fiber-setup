@@ -175,6 +175,11 @@ export const cs: Messages = {
     accessButton: "Povolit přístup k USB",
     accessDone: "Přístup k USB je povolen.",
     accessFailed: "Přístup k USB nebyl povolen: {error}",
+    driverTitle: "Nainstalovat ovladač USB (jednou)",
+    driverText: "Windows nemají ovladač pro FIBER v režimu USB. FIBER Setup nainstaluje ovladač od HARDWARIO; Windows vás požádají o potvrzení.",
+    driverButton: "Nainstalovat ovladač USB",
+    driverDone: "Ovladač USB je nainstalován.",
+    driverFailed: "Ovladač USB nebyl nainstalován: {error}",
     toolsMissing: "V této instalaci chybí rpiboot, takže FIBER nejde spustit v režimu USB.",
   },
   write: {

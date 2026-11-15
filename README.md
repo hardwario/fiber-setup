@@ -8,8 +8,8 @@ installs the FIBER software by itself and restarts once.
 Same structure and look as [hardwario/tower-bridge](https://github.com/hardwario/tower-bridge): Tauri 2,
 Rust, Svelte 5; `crates/fiber-setup-core` (no Tauri), `crates/fiber-setup-cli`, `src-tauri`, `src`.
 
-**Status: 1.0.0 (2026-11-15), the first release.** Linux and macOS. Not yet tested on a real FIBER; the
-macOS side has not had a FIBER connected at all yet.
+**Status: 1.0.0 (2026-11-15), the first release**, for Linux and macOS; Windows comes with the next one.
+Not yet tested on a real FIBER; the macOS and Windows sides have not had a FIBER connected at all yet.
 
 ## How it works
 
@@ -51,6 +51,24 @@ AppImage and .deb on Linux, `FIBER Setup.app` and the .dmg on macOS (with `CI=tr
 without opening a Finder window). The releases on GitHub are built, signed and notarized by the Release
 workflow: [docs/release.md](docs/release.md).
 
+On Windows (in PowerShell, as administrator for the app itself):
+
+```powershell
+npm ci
+C:\cygwin64\bin\bash.exe --login -c "cd '$PWD' && scripts/fetch-usbboot.sh"   # rpiboot.exe, built in Cygwin
+scripts\driver-catalog.ps1                 # the USB driver's catalog (unsigned)
+npm run tauri dev
+npx tauri build --no-bundle                # target\release\fiber-setup.exe
+scripts\windows-package.ps1 -Step stage -Exe target\release\fiber-setup.exe
+scripts\windows-package.ps1 -Step uninstaller
+scripts\windows-package.ps1 -Step installer   # target\windows-package\out\...-setup.exe (needs NSIS 3)
+scripts\windows-package.ps1 -Step zip
+```
+
+Cygwin needs the packages `gcc-core`, `make`, `git`, `pkg-config` and `libusb1.0-devel`. A driver built by
+hand is not signed, so Windows does not take it; `scripts\windows-test.ps1` shows how CI gets around that
+on its own machine.
+
 Demo: `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) runs the app on the same simulated FIBER, all steps
 from download to "Set up another FIBER", without touching USB or the network. The title says "(demo)".
 
@@ -58,6 +76,33 @@ The first time on Linux, the app asks to **allow USB access**: two udev rules (t
 Station's, with the partition lines fixed so the desktop does not mount the FIBER's partitions) that let the
 desktop user talk to the CM4 boot ROM and write the CM4 eMMC, and nothing else. They
 are installed with `pkexec` (password dialog).
+
+## On Windows
+
+The steps are the same; these things under them differ.
+
+- **Administrator.** The app asks for administrator rights when it starts (the usual Windows prompt).
+  Writing a disk and installing a driver both need them.
+- **The USB driver.** Windows has no driver for a FIBER in USB mode. FIBER Setup brings one: a few lines
+  (`packaging/windows/driver/fiber-usbboot.inf`) that tell Windows to use its own WinUSB for the boot ROM,
+  with a catalog signed by HARDWARIO a.s. The installer installs it; otherwise the Connect step offers
+  "Install the USB driver". Windows asks once whether to trust software from HARDWARIO a.s.
+- **Finding the FIBER.** The boards come from Windows' list of USB devices, the disks and the USB device
+  each hangs on from its storage management (PowerShell's `Get-Disk` and the device tree). A USB port is
+  named after its place (`1400-2.1`: the controller, then the port on each hub).
+- **One at a time.** rpiboot names USB ports its own way on Windows, so it is not told which board to
+  take: with several boards in USB mode the app asks for one to be connected at a time. The disk it writes
+  is still only the one on the chosen port.
+- **Writing.** Windows writes into no volume it has mounted, so the eMMC's old partition table is removed
+  first (`diskpart clean`), and its volumes with it. The disk is opened by its device path, which names its
+  vendor and serial number, not by its number, and never if Windows boots from it.
+- **rpiboot** is built in Cygwin, the way Raspberry Pi builds it for Windows, and has Cygwin's two DLLs
+  next to it.
+
+The installer (`...-windows-x64-setup.exe`) puts the app into Program Files, installs Microsoft's WebView2
+where Windows does not have it yet, and installs the USB driver. The portable zip is the same app in a
+folder: unpack it anywhere and start `fiber-setup.exe`. Both are signed by HARDWARIO a.s.
+([docs/release.md](docs/release.md)).
 
 ## On macOS
 
@@ -106,8 +151,9 @@ npm run build
 - Wi-Fi from the phone over Bluetooth is offered, but the first start still needs the internet (Ethernet)
   to install the software; not tried with the HARDWARIO Manager app yet.
 - A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
-- Windows.
-- macOS: a first write to a real FIBER (see the status above).
+- macOS and Windows: a first write to a real FIBER (see the status above). On Windows also the first
+  install of the USB driver with a FIBER connected.
+- Windows on ARM: the driver covers it, the app is built for Intel/AMD only (it runs there emulated).
 
 ## Pictures
 

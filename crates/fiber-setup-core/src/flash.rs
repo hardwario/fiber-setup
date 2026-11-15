@@ -98,6 +98,11 @@ pub fn run(
 
     events(Event::Phase { phase: Phase::Boot });
     if !matches!(find_emmc(port, image.size)?, Emmc::Ready(_)) {
+        // rpiboot cannot be told which board to take on Windows (rpiboot.rs).
+        #[cfg(windows)]
+        if crate::usb::boards().iter().filter(|b| b.kind == crate::usb::BoardKind::Boot).count() > 1 {
+            bail!("several boards are in USB mode; on Windows connect one FIBER at a time");
+        }
         let log = |line: String| events(Event::Log { line });
         rpiboot::run(tools, port, RPIBOOT_TIMEOUT, &log, cancel)?;
     } else {

@@ -68,7 +68,8 @@ fn done<T: Serialize>(r: anyhow::Result<T>) -> Done<T> {
 }
 
 fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(name).map(PathBuf::from)
 }
 
 /// The language and region this user chose in System Settings: an app started from the Finder
@@ -97,7 +98,26 @@ fn apple_locale(text: &str) -> Option<String> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows has no `LANG` either: its own language and country, `cs-CZ` as `cs_CZ`.
+#[cfg(windows)]
+fn system_locale() -> Option<String> {
+    let regional = regional();
+    let lang = regional.language.as_deref()?.split('-').next()?.to_string();
+    Some(match &regional.region {
+        Some(region) => format!("{lang}_{region}"),
+        None => lang,
+    })
+}
+
+/// What Windows is set to, asked once: the answer takes a moment and does not change while the
+/// app runs.
+#[cfg(windows)]
+fn regional() -> &'static fiber_setup_core::windows::Regional {
+    static REGIONAL: std::sync::OnceLock<fiber_setup_core::windows::Regional> = std::sync::OnceLock::new();
+    REGIONAL.get_or_init(fiber_setup_core::windows::regional)
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn system_locale() -> Option<String> {
     None
 }
@@ -115,7 +135,12 @@ fn locale() -> (String, Option<String>) {
 }
 
 /// The computer's time zone: `/etc/timezone`, or the target of `/etc/localtime` (macOS too).
+/// Windows names its zones its own way, and is asked for the name the FIBER knows.
 fn timezone() -> Option<String> {
+    #[cfg(windows)]
+    if let Some(tz) = regional().timezone.clone().filter(|tz| tz.contains('/')) {
+        return Some(tz);
+    }
     if let Ok(tz) = std::fs::read_to_string("/etc/timezone") {
         let tz = tz.trim();
         if !tz.is_empty() {
@@ -151,7 +176,9 @@ fn tools(app: &AppHandle) -> Option<rpiboot::Tools> {
     rpiboot::find_tools(&resource_dirs(app))
 }
 
-#[tauri::command]
+// Not on the main thread: on Windows it asks the system for its language and time zone, which
+// takes a moment.
+#[tauri::command(async)]
 fn app_info(app: AppHandle) -> AppInfo {
     let (language, region) = locale();
     let (ssh_key, ssh_key_path) = match ssh_key() {
@@ -214,16 +241,20 @@ async fn pick_image(app: AppHandle) -> Option<String> {
     picked.and_then(|f| f.into_path().ok()).map(|p| p.display().to_string())
 }
 
-#[tauri::command]
+// Not on the main thread either: on Windows it looks into the driver store.
+#[tauri::command(async)]
 fn access_status() -> access::Status {
     access::status()
 }
 
 #[tauri::command]
-async fn access_install() -> Result<access::Status, String> {
-    tauri::async_runtime::spawn_blocking(|| access::install().map(|_| access::status()).map_err(|e| format!("{e:#}")))
-        .await
-        .map_err(|e| e.to_string())?
+async fn access_install(app: AppHandle) -> Result<access::Status, String> {
+    let tools = tools(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        access::install(tools.as_ref()).map(|_| access::status()).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -260,6 +291,20 @@ async fn find_device(hostname: String) -> Option<check::Found> {
     tauri::async_runtime::spawn_blocking(move || check::find(&hostname)).await.ok().flatten()
 }
 
+/// What opens a link in the user's browser. On Windows it is Explorer: the app runs as
+/// administrator there, and Explorer hands the link to the browser as the user, not as
+/// administrator.
+fn opener() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        PathBuf::from("/usr/bin/open")
+    } else if cfg!(windows) {
+        let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        root.join("explorer.exe")
+    } else {
+        PathBuf::from("xdg-open")
+    }
+}
+
 /// Opens a web page in the browser; only https links, only ours.
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
@@ -267,8 +312,11 @@ fn open_link(url: String) -> Result<(), String> {
     if !allowed.iter().any(|p| url.starts_with(p)) {
         return Err("link not allowed".into());
     }
-    let opener = if cfg!(target_os = "macos") { "/usr/bin/open" } else { "xdg-open" };
-    let mut child = std::process::Command::new(opener).arg(&url).spawn().map_err(|e| e.to_string())?;
+    let mut command = std::process::Command::new(opener());
+    // No console window flashing up on Windows.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+    let mut child = command.arg(&url).spawn().map_err(|e| e.to_string())?;
     // Reaped on a thread, so no zombie is left behind.
     std::thread::spawn(move || {
         let _ = child.wait();

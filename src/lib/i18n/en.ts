@@ -173,6 +173,11 @@ export const en = {
     accessButton: "Allow USB access",
     accessDone: "USB access allowed.",
     accessFailed: "USB access was not allowed: {error}",
+    driverTitle: "Install the USB driver (once)",
+    driverText: "Windows has no driver for a FIBER in USB mode. FIBER Setup installs one from HARDWARIO; Windows asks you to confirm it.",
+    driverButton: "Install the USB driver",
+    driverDone: "USB driver installed.",
+    driverFailed: "The USB driver was not installed: {error}",
     toolsMissing: "rpiboot is missing from this installation, so the FIBER cannot be started in USB mode.",
   },
   write: {

@@ -24,14 +24,15 @@ enum Cmd {
     },
     /// FIBERs on USB (boot mode or gadget) and the disks on this computer.
     Devices,
-    /// Whether the USB udev rules are installed; --install asks for the password and installs them.
+    /// Whether the USB udev rules (on Windows: the USB driver) are installed; --install installs
+    /// them (Linux asks for the password, Windows whether to trust the driver's publisher).
     Access {
         #[arg(long)]
         install: bool,
     },
     /// Write the image with the first-boot settings to the FIBER (or, with --to-file, to a file).
     /// Passwords come from FIBER_SETUP_PASSWORD and FIBER_SETUP_WIFI_PASSWORD.
-    Flash(FlashArgs),
+    Flash(Box<FlashArgs>),
     /// Show the first-boot files on an image file or a FIBER's eMMC (jumper on BOOT, after rpiboot).
     Inspect { path: PathBuf },
     /// Look for <hostname>.local on this network.
@@ -128,11 +129,11 @@ fn run() -> Result<()> {
         }
         Cmd::Access { install } => {
             if install {
-                access::install()?;
+                access::install(rpiboot::find_tools(&[]).as_ref())?;
             }
             println!("{}", serde_json::to_string_pretty(&access::status())?);
         }
-        Cmd::Flash(a) => flash_cmd(a, &cancel)?,
+        Cmd::Flash(a) => flash_cmd(*a, &cancel)?,
         Cmd::Inspect { path } => inspect(&path)?,
         Cmd::Find { hostname } => match check::find(&hostname) {
             Some(f) => println!("{hostname}.local = {} (SSH {})", f.ip, if f.ssh { "open" } else { "closed" }),
