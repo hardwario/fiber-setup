@@ -557,7 +557,7 @@ mod tests {
             return;
         };
         assert!(out.status.success(), "diskpart: {}", String::from_utf8_lossy(&out.stdout));
-        let _attached = Attached(vhd);
+        let attached = Attached(vhd);
         let find = || {
             let all = crate::windows::probe().unwrap();
             let mut ours =
@@ -601,6 +601,11 @@ mod tests {
         disk.seek(SeekFrom::Start(0)).unwrap();
         let err = verify_from(&src, &mut disk, path, &noop, &Cancel::new()).unwrap_err();
         assert!(err.to_string().contains("at byte 8192"), "{err}");
+
+        // And the virtual disk goes away again (the guard above is for a test that failed).
+        drop(disk);
+        let out = diskpart(&[format!("select vdisk file=\"{}\"", attached.0), "detach vdisk".into()]).unwrap();
+        assert!(out.status.success(), "diskpart: {}", String::from_utf8_lossy(&out.stdout));
     }
 
     #[test]

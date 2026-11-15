@@ -24,16 +24,24 @@ $out = Join-Path $Work 'out'
 $version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
 if (-not $Label) { $Label = $version }
 
+# NSIS makes the installer. GitHub's Windows machines do not have it, so there it is installed
+# with Chocolatey, which they do have; on a developer's PC it is asked for.
 function Find-MakeNsis {
+  $usual = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
   $found = Get-Command makensis.exe -ErrorAction SilentlyContinue
   if ($found) { return $found.Source }
-  $usual = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
   if (Test-Path $usual) { return $usual }
-  throw 'makensis.exe not found: install NSIS 3 (choco install nsis)'
+  if ($env:GITHUB_ACTIONS -eq 'true') {
+    choco install nsis --yes --no-progress | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "choco install nsis failed ($LASTEXITCODE)" }
+    if (Test-Path $usual) { return $usual }
+  }
+  throw 'makensis.exe not found: install NSIS 3 (https://nsis.sourceforge.io, or: choco install nsis)'
 }
 
 function Invoke-MakeNsis([string[]]$Defines) {
   $makensis = Find-MakeNsis
+  "NSIS $(& $makensis /VERSION) ($makensis)"
   $arguments = @('/V2', '/INPUTCHARSET', 'UTF8', "/DVERSION=$version") + $Defines + (Join-Path $root 'packaging\windows\installer.nsi')
   & $makensis @arguments
   if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
