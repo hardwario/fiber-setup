@@ -75,9 +75,12 @@ $entry = Get-ItemProperty $key
 "Installed: $($entry.DisplayName) $($entry.DisplayVersion) by $($entry.Publisher), $($entry.EstimatedSize) KB"
 $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\FIBER Setup.lnk'
 if (-not (Test-Path $shortcut)) { throw 'no Start menu entry' }
-$webview = Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue
-"WebView2: $($webview.pv)"
-if (-not $webview.pv) { throw 'WebView2 is not installed after the installer ran' }
+# For the computer or for this user: either is installed.
+$webview = 'HKLM:\SOFTWARE\WOW6432Node', 'HKCU:\Software' | ForEach-Object {
+  (Get-ItemProperty "$_\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" -ErrorAction SilentlyContinue).pv
+} | Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -First 1
+"WebView2: $webview"
+if (-not $webview) { throw 'WebView2 is not installed after the installer ran' }
 
 Step 'The uninstaller removes it'
 # `_?=` makes it work in place and wait, instead of copying itself away and returning at once.

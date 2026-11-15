@@ -7,11 +7,11 @@
    and so does Tauri; `cargo check` then updates `Cargo.lock`) and in `src/lib/api.ts` (the simulated
    FIBER). `node scripts/check-version.mjs v1.2.3` checks that they agree.
 2. Commit, then tag and push: `git tag v1.2.3 && git push origin v1.2.3`.
-3. The Release workflow (`.github/workflows/release.yml`) tests on Linux and macOS, builds both, signs and
-   notarizes the macOS app, and creates a **draft** release with all files and their `.sha256` checksums.
-   The signing job waits for an approval: open the run and choose **Review deployments**, **signing**,
-   **Approve and deploy** (GitHub also sends a notification). Approve only a run of a tag you pushed
-   yourself.
+3. The Release workflow (`.github/workflows/release.yml`) tests and builds on Linux, macOS and Windows,
+   signs the Windows binaries, signs and notarizes the macOS app, and creates a **draft** release with all
+   files and their `.sha256` checksums. The two signing jobs wait for an approval: open the run and choose
+   **Review deployments**, **signing**, **Approve and deploy** (GitHub also sends a notification). Approve
+   only a run of a tag you pushed yourself.
 4. Check the draft on GitHub and publish it.
 
 A dry run builds everything without publishing: Actions, Release, Run workflow. Started on a branch it skips
@@ -21,6 +21,7 @@ the signing; started on a release tag it signs too, but still publishes nothing.
 
 | File | Built by |
 |---|---|
+| `fiber-setup-<version>-windows-x64-setup.exe`, `fiber-setup-<version>-windows-x64-portable.zip` | `build` (windows, the exe), signed and packed by `sign-windows` |
 | `fiber-setup-<version>-macos-universal.dmg` | `build` (macos, the app), signed, notarized and packed by `sign-macos` |
 | `fiber-setup-<version>-linux-x86_64.AppImage`, `fiber-setup-<version>-linux-x86_64.deb` | `build` (linux), not signed |
 
@@ -28,7 +29,7 @@ Each has a `<file>.sha256` next to it (`shasum -a 256 -c <file>.sha256`), made a
 The release holds these files and nothing else; the `publish` job fails otherwise.
 
 Not released yet: `fiber-setup-cli` (it needs rpiboot and the gadget beside it, which only the app
-bundles), and anything for Windows.
+bundles).
 
 ## macOS signing and notarization
 
@@ -81,19 +82,53 @@ certificate signing request in developer.apple.com (only the Account Holder can;
 the new `.p12` goes into `APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD` of every repository that
 signs. The API key also serves other build systems: never revoke it for this repository's sake.
 
-## Windows
+## Windows signing
 
-FIBER Setup does not run on Windows yet (README, "Not in this version"), so the workflow builds and signs
-nothing for it. When it does, the Windows binaries are signed the way TOWER Bridge's are: a `sign-windows`
-job in the same `signing` environment, Authenticode through Microsoft Azure Artifact Signing (account
-`hardwario`, certificate profile `hardwario`, endpoint `https://weu.codesigning.azure.net/`), every signature
-with an RFC 3161 timestamp from `http://timestamp.acs.microsoft.com`. That needs, and does not have yet:
+The `sign-windows` job signs with Authenticode, using Microsoft Azure Artifact Signing (formerly Trusted
+Signing), account `hardwario`, certificate profile `hardwario` (Public Trust, "CN=HARDWARIO a.s."), endpoint
+`https://weu.codesigning.azure.net/`. Nothing is compiled in this job; it signs, and packs with NSIS. Order:
 
-- the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` in the environment;
-- a federated credential on the Entra app `github-codesign` for this repository's subject,
-  `repo:hardwario@28539912/fiber-setup@1446010974:environment:signing` (GitHub's immutable form, with the
-  owner and repository IDs). The app takes at most 20 of them, so this one waits until there is something
-  to sign.
+1. `uninstall.exe` is made (unsigned) from `packaging/windows/installer.nsi`: the installer carries it, and
+   cannot be changed once it is made, so it has to exist before the first signing.
+2. Signed together: `fiber-setup.exe`, `usbboot\rpiboot.exe` (built here from Raspberry Pi's source), the
+   USB driver's catalog `usbboot\driver\fiber-usbboot.cat`, and `uninstall.exe`.
+3. The installer is made from the signed files, and the portable zip of the same app.
+4. The installer is signed.
+
+Not signed, because they are other people's files and go out as they came: Cygwin's `cygwin1.dll` and
+`cygusb-1.0.dll` (unsigned) and Microsoft's `MicrosoftEdgeWebview2Setup.exe` inside the installer (signed by
+Microsoft, which the build job and this job both check).
+
+Signatures use SHA-256 and an RFC 3161 timestamp from `http://timestamp.acs.microsoft.com`. Microsoft's
+certificates are valid for about three days, so only the timestamp keeps a signature valid after that.
+
+Verification steps fail the job unless each of our files has a valid signature by "HARDWARIO a.s." with a
+timestamp, the files of others are the ones named above and as described, and **Windows takes the signed
+driver package**: its signer is put among the machine's trusted publishers (what "Always trust software from
+HARDWARIO a.s." does on a user's computer) and the package is added to the driver store with `pnputil`. A
+signature check alone would not show that; a driver package is judged by stricter rules than a program.
+
+CI (`scripts/windows-test.ps1`, every push) checks the rest on a Windows machine without a FIBER: rpiboot.exe
+starts, Windows takes the driver package when a certificate made for the run signs it, the app installs it
+by itself, and the installer installs and uninstalls.
+
+A new certificate has no reputation with SmartScreen: early downloads may still show "More info, Run anyway".
+That is not a signing failure.
+
+When: for a pushed release tag (`v*`) and for a dry run started on one. Nothing else reaches the job.
+
+What it depends on:
+
+- The GitHub environment **`signing`** (see macOS above), with the variables `AZURE_CLIENT_ID`,
+  `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` (not secrets).
+- On the Azure side: the Entra app `github-codesign`, whose client ID is `AZURE_CLIENT_ID`, with the role
+  "Artifact Signing Certificate Profile Signer" on the `hardwario` profile only, and a federated credential
+  that trusts GitHub's OIDC tokens for the subject
+  `repo:hardwario@28539912/fiber-setup@1446010974:environment:signing`. The repository uses GitHub's
+  immutable subject (with the owner and repository IDs), so a re-created repository of the same name is
+  not trusted. The job logs in with `azure/login` through OIDC (`id-token: write`); there is no client
+  secret.
+- NSIS 3, which the job installs with Chocolatey (GitHub's Windows machines do not have it).
 
 ## Linux
 

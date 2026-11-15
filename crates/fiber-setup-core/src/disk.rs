@@ -548,7 +548,10 @@ mod tests {
         }
 
         let t = tempfile::tempdir().unwrap();
-        let vhd = t.path().join("emmc.vhd").display().to_string();
+        // By its full path: the temporary folder often comes in Windows' short form
+        // (`RUNNER~1`), under which the disk service does not know a disk it attached.
+        let folder = std::fs::canonicalize(t.path()).unwrap().display().to_string();
+        let vhd = format!(r"{}\emmc.vhd", folder.trim_start_matches(r"\\?\"));
         let disk_size: u64 = 64 << 20;
         let Some(out) =
             diskpart(&[format!("create vdisk file=\"{vhd}\" maximum=64 type=fixed"), "attach vdisk".into()])
