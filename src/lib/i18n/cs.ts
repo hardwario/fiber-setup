@@ -163,6 +163,7 @@ export const cs: Messages = {
     lead: "Do paměti FIBERu se zapíše {image} s vaším nastavením. Vše, co v ní je teď, bude nahrazeno.",
     start: "Zapsat do FIBERu",
     keep: "Nechte kabel připojený, dokud zápis neskončí.",
+    macPassword: "macOS se zeptá na vaše heslo, než této aplikaci dovolí zapsat paměť FIBERu.",
     doneTitle: "Zapsáno a zkontrolováno",
     doneText: "Do FIBERu zapsáno {size} a zpětně přečteno bez chyb za {time}.",
     serial: "Sériové číslo CM4: {serial}",

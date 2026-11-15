@@ -8,7 +8,8 @@ installs the FIBER software by itself and restarts once.
 Same structure and look as [hardwario/tower-bridge](https://github.com/hardwario/tower-bridge): Tauri 2,
 Rust, Svelte 5; `crates/fiber-setup-core` (no Tauri), `crates/fiber-setup-cli`, `src-tauri`, `src`.
 
-**Status: first version (0.1.0, 2026-11-04).** Linux only. Not yet tested on a real FIBER.
+**Status: first version (0.1.0, 2026-11-04).** Linux and macOS. Not yet tested on a real FIBER; the macOS
+side (2026-11-15) has not had a FIBER connected at all yet.
 
 ## How it works
 
@@ -35,21 +36,45 @@ Rust, Svelte 5; `crates/fiber-setup-core` (no Tauri), `crates/fiber-setup-cli`, 
 
 ```sh
 npm ci
-npm run usbboot             # rpiboot + gadget into src-tauri/resources/usbboot (from ~/github/raspberrypi/usbboot)
+npm run usbboot             # rpiboot + gadget into src-tauri/resources/usbboot
 npm run tauri dev           # the app with hot reload
 npm run dev                 # the screens in a browser with a simulated FIBER: http://localhost:1430
 ```
 
-Release build: `npx tauri build` gives `target/release/fiber-setup` and the AppImage and .deb in
-`target/release/bundle/`.
+`npm run usbboot` takes rpiboot from a built usbboot checkout in `~/github/raspberrypi/usbboot` (or
+`USBBOOT_DIR`). Without one it fetches and builds the commit 0.1.0 was made with; that needs git, make and
+a C compiler, on Linux also libusb's headers (`libusb-1.0-0-dev` on Debian/Ubuntu). On macOS it builds
+libusb too, from its pinned source release, and both come out for Apple silicon and Intel.
+
+Release build: `npx tauri build` gives `target/release/fiber-setup` and, in `target/release/bundle/`, the
+AppImage and .deb on Linux, `FIBER Setup.app` and the .dmg on macOS (with `CI=true` the .dmg is made
+without opening a Finder window).
 
 Demo: `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) runs the app on the same simulated FIBER, all steps
 from download to "Set up another FIBER", without touching USB or the network. The title says "(demo)".
 
-The first time, the app asks to **allow USB access**: two udev rules (the Fiber Provisioning Station's,
-with the partition lines fixed so the desktop does not mount the FIBER's partitions) that let the desktop
-user talk to the CM4 boot ROM and write the CM4 eMMC, and nothing else. They
+The first time on Linux, the app asks to **allow USB access**: two udev rules (the Fiber Provisioning
+Station's, with the partition lines fixed so the desktop does not mount the FIBER's partitions) that let the
+desktop user talk to the CM4 boot ROM and write the CM4 eMMC, and nothing else. They
 are installed with `pkexec` (password dialog).
+
+## On macOS
+
+The steps are the same; three things under them differ.
+
+- **Finding the FIBER.** The boards and the disks behind them come from the I/O Registry (`ioreg`). The USB
+  port is named the way libusb names it there (bus, then the port on each hub: `1-1`, `2-1.3`), because that
+  is the name rpiboot's `-p` compares with.
+- **Writing.** There is nothing to allow beforehand. When the write starts, macOS asks for the password
+  (`authopen`) and hands the app the open eMMC, so nothing of the app runs as root. Before the dialog and
+  again with the disk open, the app checks that the disk is a CM4's eMMC on USB; it opens no other disk.
+  The eMMC is written and read back through its raw device (`/dev/rdiskN`), which has no cache in between.
+- **Mounting.** macOS mounts every disk it sees. The FIBER's volumes are unmounted before the write, and the
+  eMMC is ejected after it, so macOS does not write its own files to the new boot partition.
+
+The bundle carries its own rpiboot and libusb (`npm run usbboot` builds both), so the app needs nothing
+installed where it runs. A copy built by hand is not signed with a Developer ID and not notarized: it starts
+on the Mac that built it, and Gatekeeper stops it elsewhere.
 
 ## Command line
 
@@ -79,7 +104,8 @@ npm run build
 - Wi-Fi from the phone over Bluetooth is offered, but the first start still needs the internet (Ethernet)
   to install the software; not tried with the HARDWARIO Manager app yet.
 - A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
-- Windows and macOS.
+- Windows.
+- macOS: a signed and notarized build, and a first write to a real FIBER (see the status above).
 
 ## Pictures
 

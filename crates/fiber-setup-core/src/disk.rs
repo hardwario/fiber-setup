@@ -3,12 +3,18 @@
 //! Only a disk that rpiboot exposed on the FIBER's own USB port, with the CM4 gadget's SCSI
 //! identity, is ever written (`flash.rs`). The probe here is the Provisioning Station's
 //! (`proximos/provisioning`, `rpiboot.rs`), cut down.
+//!
+//! That probe reads sysfs, so it is Linux's; on macOS the disks come from the I/O Registry and
+//! are opened through `macos.rs`.
 
 use crate::event::{Cancel, Event, Phase, Sink, Throttle};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::FileTypeExt;
+#[cfg(not(target_os = "macos"))]
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -44,10 +50,16 @@ impl BlockDevice {
     }
 }
 
+/// The disks on this computer. On macOS only those behind a USB device: the others are never a
+/// FIBER.
 pub fn list() -> std::io::Result<Vec<BlockDevice>> {
+    #[cfg(target_os = "macos")]
+    return crate::macos::disks().map_err(|e| std::io::Error::other(format!("{e:#}")));
+    #[cfg(not(target_os = "macos"))]
     list_in(Path::new("/sys/block"))
 }
 
+/// The disks in a sysfs block directory (Linux).
 pub fn list_in(root: &Path) -> std::io::Result<Vec<BlockDevice>> {
     let mut out = Vec::new();
     let entries = match std::fs::read_dir(root) {
@@ -101,6 +113,7 @@ fn usb_identity(block: &Path) -> (Option<String>, Option<String>) {
 }
 
 /// Whether the disk or one of its partitions is mounted.
+#[cfg(not(target_os = "macos"))]
 pub fn is_mounted(dev: &BlockDevice) -> bool {
     let Ok(mounts) = std::fs::read_to_string("/proc/mounts") else { return false };
     let prefix = dev.path.as_str();
@@ -111,6 +124,21 @@ pub fn is_mounted(dev: &BlockDevice) -> bool {
                 !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
             })
     })
+}
+
+/// Nothing of the disk may be mounted while it is written. On Linux a mounted FIBER is refused:
+/// the udev rule keeps the desktop from mounting its partitions, so a mount is somebody's choice.
+/// macOS mounts every disk it sees, so there the FIBER's volumes are unmounted.
+pub fn free_for_writing(dev: &BlockDevice) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    return crate::macos::unmount(dev);
+    #[cfg(not(target_os = "macos"))]
+    {
+        if is_mounted(dev) {
+            bail!("{} is mounted on this computer; unmount it and try again", dev.path);
+        }
+        Ok(())
+    }
 }
 
 /// What goes where: the raw image, with the boot partition's bytes replaced by the personalised
@@ -158,29 +186,7 @@ impl Target {
 
     fn open_write(&self) -> Result<File> {
         match self {
-            Target::Device(p) => {
-                let meta = std::fs::metadata(p).with_context(|| format!("{} is gone", p.display()))?;
-                if !meta.file_type().is_block_device() {
-                    bail!("{} is not a disk", p.display());
-                }
-                // O_EXCL on a block device fails while it (or a partition) is mounted or in use.
-                let f = OpenOptions::new().write(true).custom_flags(libc::O_EXCL).open(p).map_err(|e| {
-                    if e.kind() == std::io::ErrorKind::PermissionDenied {
-                        anyhow::anyhow!("no permission to write {} (allow USB access first)", p.display())
-                    } else {
-                        anyhow::anyhow!("cannot open {} for writing: {e}", p.display())
-                    }
-                })?;
-                // The device node opened must still be the disk that was checked: compare its
-                // major:minor with the kernel's record for that name.
-                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                let sys = std::fs::read_to_string(Path::new("/sys/block").join(&name).join("dev")).unwrap_or_default();
-                let rdev = f.metadata()?.rdev();
-                if sys.trim() != format!("{}:{}", dev_major(rdev), dev_minor(rdev)) {
-                    bail!("{} changed while opening it; not writing", p.display());
-                }
-                Ok(f)
-            }
+            Target::Device(p) => open_device(p),
             Target::File(p) => {
                 // The CLI's --to-file must never become a way to write a disk.
                 if let Ok(meta) = std::fs::symlink_metadata(p)
@@ -194,13 +200,59 @@ impl Target {
     }
 }
 
+/// Opens the eMMC for writing.
+#[cfg(not(target_os = "macos"))]
+fn open_device(p: &Path) -> Result<File> {
+    let meta = std::fs::metadata(p).with_context(|| format!("{} is gone", p.display()))?;
+    if !meta.file_type().is_block_device() {
+        bail!("{} is not a disk", p.display());
+    }
+    // O_EXCL on a block device fails while it (or a partition) is mounted or in use.
+    let f = OpenOptions::new().write(true).custom_flags(libc::O_EXCL).open(p).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            anyhow::anyhow!("no permission to write {} (allow USB access first)", p.display())
+        } else {
+            anyhow::anyhow!("cannot open {} for writing: {e}", p.display())
+        }
+    })?;
+    // The device node opened must still be the disk that was checked: compare its
+    // major:minor with the kernel's record for that name.
+    let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let sys = std::fs::read_to_string(Path::new("/sys/block").join(&name).join("dev")).unwrap_or_default();
+    let rdev = f.metadata()?.rdev();
+    if sys.trim() != format!("{}:{}", dev_major(rdev), dev_minor(rdev)) {
+        bail!("{} changed while opening it; not writing", p.display());
+    }
+    Ok(f)
+}
+
+/// Opens the eMMC for writing, and for reading it back: macOS asks for the password for each
+/// open, so one handle does both. It checks there that the disk is a FIBER's.
+#[cfg(target_os = "macos")]
+fn open_device(p: &Path) -> Result<File> {
+    crate::macos::open_disk(p)
+}
+
 /// glibc's encoding of a device number.
+#[cfg(any(not(target_os = "macos"), test))]
 fn dev_major(dev: u64) -> u64 {
     ((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff)
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
 fn dev_minor(dev: u64) -> u64 {
     (dev & 0xff) | ((dev >> 12) & !0xff)
+}
+
+/// Makes sure what was written is on the disk. `all` includes the file's size and times.
+fn flush(out: &File, all: bool) -> std::io::Result<()> {
+    // A disk on macOS is written through its raw device: every write is on the disk when it
+    // returns, and the full flush that std asks for there (F_FULLFSYNC) is for files only.
+    #[cfg(target_os = "macos")]
+    if out.metadata()?.file_type().is_char_device() {
+        return Ok(rustix::fs::fsync(out)?);
+    }
+    if all { out.sync_all() } else { out.sync_data() }
 }
 
 /// Writes the image so that a stop half way never leaves a disk that boots: the old partition
@@ -208,6 +260,11 @@ fn dev_minor(dev: u64) -> u64 {
 /// first chunk (with the new partition table) goes last. Flushing every [`SYNC_EVERY`] bytes keeps
 /// the progress honest and lets Cancel act within seconds instead of after a long final flush.
 pub fn write(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cancel) -> Result<()> {
+    write_open(src, target, events, cancel).map(drop)
+}
+
+/// [`write`], giving back the target still open.
+fn write_open(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cancel) -> Result<File> {
     events(Event::Phase { phase: Phase::Write });
     if let (Target::File(p), Ok(raw)) = (target, std::fs::canonicalize(src.raw))
         && std::fs::canonicalize(p).is_ok_and(|t| t == raw)
@@ -216,11 +273,23 @@ pub fn write(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cance
     }
     let mut input = File::open(src.raw).with_context(|| format!("opening {}", src.raw.display()))?;
     let mut out = target.open_write()?;
-    let path = target.path().display().to_string();
+    write_to(src, &mut input, &mut out, target.path(), events, cancel)?;
+    Ok(out)
+}
+
+fn write_to(
+    src: &Source<'_>,
+    input: &mut File,
+    out: &mut File,
+    path: &Path,
+    events: Sink<'_>,
+    cancel: &Cancel,
+) -> Result<()> {
+    let path = path.display().to_string();
     let mut buf = vec![0u8; CHUNK];
     let first = (src.size).min(CHUNK as u64) as usize;
     out.write_all(&buf[..first]).with_context(|| format!("clearing the partition table of {path}"))?;
-    out.sync_data().with_context(|| format!("flushing {path}"))?;
+    flush(out, false).with_context(|| format!("flushing {path}"))?;
 
     let mut throttle = Throttle::new(Phase::Write, src.size);
     let mut unsynced = 0u64;
@@ -229,23 +298,23 @@ pub fn write(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cance
         cancel.check()?;
         let offset = i * CHUNK as u64;
         let len = (src.size - offset).min(CHUNK as u64) as usize;
-        src.read_at(&mut input, offset, &mut buf[..len])?;
+        src.read_at(input, offset, &mut buf[..len])?;
         out.seek(SeekFrom::Start(offset))?;
         out.write_all(&buf[..len]).with_context(|| format!("writing {path} at {offset}"))?;
         unsynced += len as u64;
         if unsynced >= SYNC_EVERY {
-            out.sync_data().with_context(|| format!("flushing {path}"))?;
+            flush(out, false).with_context(|| format!("flushing {path}"))?;
             done += unsynced;
             unsynced = 0;
             throttle.report(events, done);
         }
     }
-    out.sync_data().with_context(|| format!("flushing {path}"))?;
+    flush(out, false).with_context(|| format!("flushing {path}"))?;
     cancel.check()?;
-    src.read_at(&mut input, 0, &mut buf[..first])?;
+    src.read_at(input, 0, &mut buf[..first])?;
     out.seek(SeekFrom::Start(0))?;
     out.write_all(&buf[..first]).with_context(|| format!("writing the partition table of {path}"))?;
-    out.sync_all().with_context(|| format!("flushing {path}"))?;
+    flush(out, true).with_context(|| format!("flushing {path}"))?;
     throttle.report(events, src.size);
     Ok(())
 }
@@ -273,17 +342,52 @@ impl Aligned {
 /// device, not the copy the kernel still has in memory from the write.
 pub fn verify(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cancel) -> Result<()> {
     events(Event::Phase { phase: Phase::Verify });
-    let mut input = File::open(src.raw)?;
+    let mut disk = open_verify(target)?;
+    verify_from(src, &mut disk, target.path(), events, cancel)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_verify(target: &Target) -> Result<File> {
     let path = target.path();
-    let mut disk = match (OpenOptions::new().read(true).custom_flags(libc::O_DIRECT).open(path), target) {
-        (Ok(f), _) => f,
+    match (OpenOptions::new().read(true).custom_flags(libc::O_DIRECT).open(path), target) {
+        (Ok(f), _) => Ok(f),
         // Some file systems (tmpfs) refuse O_DIRECT; a test file there is read normally. A disk
         // never is, or the check would compare the kernel's cached copy with itself.
-        (Err(_), Target::File(_)) => {
-            File::open(path).with_context(|| format!("opening {} to verify", path.display()))?
-        }
+        (Err(_), Target::File(_)) => File::open(path).with_context(|| format!("opening {} to verify", path.display())),
         (Err(e), Target::Device(_)) => bail!("cannot read {} back directly: {e}", path.display()),
-    };
+    }
+}
+
+/// macOS has no O_DIRECT: a disk's raw device is never read from memory, and for a file the
+/// cache is switched off (where the file system can).
+#[cfg(target_os = "macos")]
+fn open_verify(target: &Target) -> Result<File> {
+    match target {
+        Target::Device(p) => open_device(p),
+        Target::File(p) => {
+            let f = File::open(p).with_context(|| format!("opening {} to verify", p.display()))?;
+            let _ = rustix::fs::fcntl_nocache(&f, true);
+            Ok(f)
+        }
+    }
+}
+
+/// Writes and reads back in one go. The same as [`write`] and then [`verify`], except that a disk
+/// on macOS is opened once for both: each open asks for the password there.
+pub fn write_and_verify(src: &Source<'_>, target: &Target, events: Sink<'_>, cancel: &Cancel) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    if let Target::Device(p) = target {
+        let mut disk = write_open(src, target, events, cancel)?;
+        events(Event::Phase { phase: Phase::Verify });
+        disk.seek(SeekFrom::Start(0))?;
+        return verify_from(src, &mut disk, p, events, cancel);
+    }
+    write(src, target, events, cancel)?;
+    verify(src, target, events, cancel)
+}
+
+fn verify_from(src: &Source<'_>, disk: &mut File, path: &Path, events: Sink<'_>, cancel: &Cancel) -> Result<()> {
+    let mut input = File::open(src.raw)?;
     let mut expected = vec![0u8; CHUNK];
     let mut aligned = Aligned::new(CHUNK);
     let mut throttle = Throttle::new(Phase::Verify, src.size);
@@ -341,6 +445,68 @@ mod tests {
         bad[123] ^= 1;
         std::fs::write(target.path(), &bad).unwrap();
         assert!(verify(&src, &target, &noop, &Cancel::new()).is_err());
+    }
+
+    /// A disk's raw device is not a file: whole sectors only, and its own idea of flushing. No
+    /// FIBER is at hand in a test, so a scratch disk image stands in for its eMMC. Opened as
+    /// this user, it can only be that image: real disks belong to root.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn writes_and_verifies_a_raw_disk() {
+        use std::os::unix::fs::MetadataExt;
+        use std::process::Command;
+
+        struct Attached(String);
+        impl Drop for Attached {
+            fn drop(&mut self) {
+                let _ = Command::new("/usr/bin/hdiutil").args(["detach", "-force", &self.0]).output();
+            }
+        }
+
+        let t = tempfile::tempdir().unwrap();
+        let backing = t.path().join("emmc.img");
+        File::create(&backing).unwrap().set_len(16 << 20).unwrap();
+        let out = Command::new("/usr/bin/hdiutil")
+            .args(["attach", "-nomount", "-imagekey", "diskimage-class=CRawDiskImage"])
+            .arg(&backing)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "hdiutil: {}", String::from_utf8_lossy(&out.stderr));
+        let dev = String::from_utf8_lossy(&out.stdout).split_whitespace().next().unwrap().to_string();
+        let attached = Attached(dev.clone());
+        let raw = std::path::PathBuf::from(dev.replacen("/dev/disk", "/dev/rdisk", 1));
+        assert_eq!(std::fs::metadata(&raw).unwrap().uid(), std::fs::metadata(&backing).unwrap().uid());
+
+        let image = t.path().join("img.raw");
+        let size = (CHUNK * 2 + 4096) as u64;
+        let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&image, &data).unwrap();
+        let patch = vec![0xAAu8; 10_000];
+        let src = Source { raw: &image, size, patch_offset: CHUNK as u64 - 5000, patch: &patch };
+        let noop = |_e: Event| {};
+        let mut input = File::open(&image).unwrap();
+        let mut disk = OpenOptions::new().read(true).write(true).open(&raw).unwrap();
+        write_to(&src, &mut input, &mut disk, &raw, &noop, &Cancel::new()).unwrap();
+        disk.seek(SeekFrom::Start(0)).unwrap();
+        verify_from(&src, &mut disk, &raw, &noop, &Cancel::new()).unwrap();
+
+        // One changed sector must fail the verify.
+        disk.seek(SeekFrom::Start(8192)).unwrap();
+        disk.write_all(&[0x55u8; 512]).unwrap();
+        disk.seek(SeekFrom::Start(0)).unwrap();
+        let err = verify_from(&src, &mut disk, &raw, &noop, &Cancel::new()).unwrap_err();
+        assert!(err.to_string().contains("at byte 8192"), "{err}");
+
+        // What went to the device is in the file behind it.
+        drop(disk);
+        drop(attached);
+        let written = std::fs::read(&backing).unwrap();
+        let p = CHUNK - 5000;
+        assert_eq!(&written[..8192], &data[..8192]);
+        assert!(written[8192..8192 + 512].iter().all(|&b| b == 0x55));
+        assert_eq!(&written[8192 + 512..p], &data[8192 + 512..p]);
+        assert!(written[p..p + 10_000].iter().all(|&b| b == 0xAA));
+        assert_eq!(&written[p + 10_000..size as usize], &data[p + 10_000..]);
     }
 
     #[test]

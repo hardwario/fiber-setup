@@ -73,7 +73,7 @@
         <div class="waiting"><Icon name="loader" size={16} /><span>{t().connect.waiting}</span></div>
         <p class="muted small">{t().connect.tip}</p>
       {/if}
-      {#if access?.rules_installed}
+      {#if access?.rules_installed && wizard.info?.os !== "macos"}
         <p class="muted small ok"><Icon name="check" size={12} /> {t().connect.accessDone}</p>
       {/if}
     </section>

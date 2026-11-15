@@ -4,6 +4,8 @@
 //! boot it into the mass-storage gadget ([`usb`], [`rpiboot`]), find its eMMC on the same USB
 //! port ([`disk`]), write the image with the first-boot settings patched into its boot partition
 //! ([`firstboot`], the "image loopback"), and read it all back ([`flash`]).
+//!
+//! Linux finds the boards and disks in sysfs; macOS asks its I/O Registry ([`macos`]).
 
 pub mod access;
 pub mod catalog;
@@ -13,6 +15,8 @@ pub mod event;
 pub mod firstboot;
 pub mod flash;
 pub mod image;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod mbr;
 pub mod rpiboot;
 pub mod usb;

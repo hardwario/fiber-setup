@@ -130,9 +130,7 @@ pub fn run(
             emmc.usb_serial.as_deref().map(|s| format!(", CM4 serial {s}")).unwrap_or_default()
         ),
     });
-    if disk::is_mounted(&emmc) {
-        bail!("{} is mounted on this computer; unmount it and try again", emmc.path);
-    }
+    disk::free_for_writing(&emmc)?;
 
     // The settings go in only now: the serial number names the FIBER.
     let settings =
@@ -146,8 +144,15 @@ pub fn run(
         Emmc::Ready(d) if d.path == emmc.path => {}
         _ => bail!("the FIBER's eMMC went away before writing; check the cable"),
     }
-    disk::write(&src, &target, events, cancel)?;
-    disk::verify(&src, &target, events, cancel)?;
+    disk::write_and_verify(&src, &target, events, cancel)?;
+    // macOS would mount the new boot partition now, and complain when the FIBER restarts.
+    #[cfg(target_os = "macos")]
+    events(Event::Log {
+        line: match crate::macos::eject(&emmc) {
+            Ok(()) => format!("{} ejected", emmc.path),
+            Err(e) => format!("{e:#} (the FIBER is written all the same)"),
+        },
+    });
     events(Event::Phase { phase: Phase::Done });
     Ok(Report {
         disk: emmc.path.clone(),
@@ -174,8 +179,7 @@ pub fn run_to_file(
     let p = personalise(image, settings, events)?;
     let src = Source { raw: &image.raw, size: image.size, patch_offset: p.offset, patch: &p.bytes };
     let target = Target::File(out.to_path_buf());
-    disk::write(&src, &target, events, cancel)?;
-    disk::verify(&src, &target, events, cancel)?;
+    disk::write_and_verify(&src, &target, events, cancel)?;
     events(Event::Phase { phase: Phase::Done });
     Ok(Report {
         disk: out.display().to_string(),

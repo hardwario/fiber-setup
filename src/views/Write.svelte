@@ -42,6 +42,9 @@
 
 {#if !fl.busy && !fl.result}
   <div class="note warning"><Icon name="warning" size={16} /><span>{t().welcome.erase}</span></div>
+  {#if wizard.info?.os === "macos"}
+    <p class="muted small">{t().write.macPassword}</p>
+  {/if}
   <div>
     <button class="btn primary large" onclick={() => wizard.startFlash()}>
       <Icon name="drive" size={16} />

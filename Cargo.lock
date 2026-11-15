@@ -902,6 +902,8 @@ dependencies = [
  "hex",
  "libc",
  "liblzma",
+ "plist",
+ "rustix",
  "serde",
  "serde_json",
  "sha-crypt",

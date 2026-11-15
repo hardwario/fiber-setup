@@ -71,10 +71,41 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+/// The language and region this user chose in System Settings: an app started from the Finder
+/// or the Dock has no `LANG`, and the one Terminal sets leaves out a region chosen apart from
+/// the language.
+#[cfg(target_os = "macos")]
+fn system_locale() -> Option<String> {
+    let out = std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLocale"]).output().ok()?;
+    let text = String::from_utf8(out.stdout).ok()?;
+    out.status.success().then(|| apple_locale(text.trim())).flatten()
+}
+
+/// `cs_CZ` as it is; `en_US@rg=czzzzz` (English, region Czechia) -> `en_CZ`.
+#[cfg(any(target_os = "macos", test))]
+fn apple_locale(text: &str) -> Option<String> {
+    let (base, keywords) = text.split_once('@').unwrap_or((text, ""));
+    let lang = base.split('_').next().filter(|l| !l.is_empty())?;
+    let region = keywords
+        .split(';')
+        .find_map(|k| k.strip_prefix("rg="))
+        .and_then(|r| r.get(..2))
+        .or_else(|| base.split('_').find(|p| p.len() == 2 && p.bytes().all(|b| b.is_ascii_uppercase())));
+    Some(match region {
+        Some(r) => format!("{lang}_{}", r.to_uppercase()),
+        None => lang.to_string(),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_locale() -> Option<String> {
+    None
+}
+
 /// `cs_CZ.UTF-8` -> (`cs`, `CZ`).
 fn locale() -> (String, Option<String>) {
-    let raw = ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
-    let raw = raw.unwrap_or_default();
+    let env = || ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
+    let raw = system_locale().or_else(env).unwrap_or_default();
     let base = raw.split('.').next().unwrap_or("");
     let mut parts = base.split('_');
     let lang = parts.next().unwrap_or("en").to_lowercase();
@@ -83,7 +114,7 @@ fn locale() -> (String, Option<String>) {
     (if lang == "cs" { "cs".into() } else { "en".into() }, region)
 }
 
-/// The computer's time zone: `/etc/timezone`, or the target of `/etc/localtime`.
+/// The computer's time zone: `/etc/timezone`, or the target of `/etc/localtime` (macOS too).
 fn timezone() -> Option<String> {
     if let Ok(tz) = std::fs::read_to_string("/etc/timezone") {
         let tz = tz.trim();
@@ -236,7 +267,8 @@ fn open_link(url: String) -> Result<(), String> {
     if !allowed.iter().any(|p| url.starts_with(p)) {
         return Err("link not allowed".into());
     }
-    let mut child = std::process::Command::new("xdg-open").arg(&url).spawn().map_err(|e| e.to_string())?;
+    let opener = if cfg!(target_os = "macos") { "/usr/bin/open" } else { "xdg-open" };
+    let mut child = std::process::Command::new(opener).arg(&url).spawn().map_err(|e| e.to_string())?;
     // Reaped on a thread, so no zombie is left behind.
     std::thread::spawn(move || {
         let _ = child.wait();
@@ -302,5 +334,21 @@ pub fn run() {
     if let Err(e) = result {
         eprintln!("error: FIBER Setup could not start: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apple_locales() {
+        assert_eq!(apple_locale("cs_CZ").as_deref(), Some("cs_CZ"));
+        assert_eq!(apple_locale("en_US@rg=czzzzz").as_deref(), Some("en_CZ"));
+        assert_eq!(apple_locale("en_CZ@currency=EUR").as_deref(), Some("en_CZ"));
+        assert_eq!(apple_locale("zh-Hans_CN").as_deref(), Some("zh-Hans_CN"));
+        assert_eq!(apple_locale("sr_Latn_RS@calendar=gregorian;rg=atzzzz").as_deref(), Some("sr_AT"));
+        assert_eq!(apple_locale("en").as_deref(), Some("en"));
+        assert_eq!(apple_locale(""), None);
     }
 }

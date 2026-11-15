@@ -1,13 +1,14 @@
-//! Raspberry Pi boards on USB, found in sysfs: a FIBER with its jumper on BOOT shows up as the
-//! BCM2711 boot ROM (`0a5c:2711`), and after rpiboot as the mass-storage gadget.
+//! Raspberry Pi boards on USB: a FIBER with its jumper on BOOT shows up as the BCM2711 boot ROM
+//! (`0a5c:2711`), and after rpiboot as the mass-storage gadget. Found in sysfs on Linux and in
+//! the I/O Registry on macOS (`macos.rs`).
 
 use serde::Serialize;
 use std::path::Path;
 
 /// Broadcom, the vendor of the boot ROM and of the gadget rpiboot loads.
-const BROADCOM_VID: &str = "0a5c";
+pub(crate) const BROADCOM_VID: &str = "0a5c";
 /// Boot ROM product ids: BCM2710, BCM2711 (two revisions) and BCM2712.
-const BOOT_PIDS: [&str; 4] = ["2763", "2764", "2711", "2712"];
+pub(crate) const BOOT_PIDS: [&str; 4] = ["2763", "2764", "2711", "2712"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,13 +22,15 @@ pub enum BoardKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UsbBoard {
     /// The USB path of its port, e.g. `3-2` or `1-1.4`: the name rpiboot's `-p` takes and the
-    /// name the gadget gets on the same port.
+    /// name the gadget gets on the same port. On Linux the kernel's name for the port; on macOS
+    /// the same form from the device's location, as libusb (and so rpiboot) builds it there.
     pub port: String,
     pub kind: BoardKind,
     pub product_id: String,
     pub serial: Option<String>,
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn boards() -> Vec<UsbBoard> {
     let emmc_ports: Vec<String> = crate::disk::list()
         .unwrap_or_default()
@@ -38,6 +41,13 @@ pub fn boards() -> Vec<UsbBoard> {
     boards_in(Path::new("/sys/bus/usb/devices"), &emmc_ports)
 }
 
+#[cfg(target_os = "macos")]
+pub fn boards() -> Vec<UsbBoard> {
+    crate::macos::boards()
+}
+
+/// The boards in a sysfs USB device directory (Linux).
+///
 /// Broadcom also makes Bluetooth adapters and fingerprint readers (`0a5c:5834` in many laptops),
 /// so a Broadcom device that is not a boot ROM counts only when a CM4 eMMC disk hangs on its port.
 pub fn boards_in(root: &Path, emmc_ports: &[String]) -> Vec<UsbBoard> {

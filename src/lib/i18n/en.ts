@@ -161,6 +161,7 @@ export const en = {
     lead: "The FIBER's memory gets {image} with your settings. Everything on it now is replaced.",
     start: "Write the FIBER",
     keep: "Keep the cable connected until it is done.",
+    macPassword: "macOS asks for your password before it lets this app write the FIBER's memory.",
     doneTitle: "Written and checked",
     doneText: "{size} written to the FIBER and read back without errors in {time}.",
     serial: "CM4 serial number: {serial}",

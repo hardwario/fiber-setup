@@ -22,6 +22,10 @@ sha-crypt = "0.5"
 sha2 = "0.10"
 ureq = "3"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = { version = "1", default-features = false }
+rustix = { version = "1", features = ["fs", "net"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 

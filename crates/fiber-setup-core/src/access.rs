@@ -1,6 +1,10 @@
 //! USB and eMMC access without root: two udev rules under the Provisioning Station's file names.
 //! They are its rules with the partition lines fixed (see the eMMC rule). The Station only checks
 //! that the files exist, so it keeps ours; this app replaces the Station's text with ours.
+//!
+//! macOS has no such step: any user may talk to the boot ROM over USB, and for the eMMC macOS
+//! asks for the password each time it is written (`macos.rs`). There the rules count as
+//! installed and installing them does nothing.
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -30,13 +34,16 @@ fi
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
-    /// Both rules are installed with our text.
+    /// Both rules are installed with our text. Always true on macOS, which needs none.
     pub rules_installed: bool,
     /// The polkit helper that asks for the password is there.
     pub pkexec: bool,
 }
 
 pub fn status() -> Status {
+    if cfg!(target_os = "macos") {
+        return Status { rules_installed: true, pkexec: false };
+    }
     let dir = Path::new(RULES_DIR);
     let same = |name: &str, text: &str| std::fs::read_to_string(dir.join(name)).map(|t| t == text).unwrap_or(false);
     Status {
@@ -51,6 +58,9 @@ fn which(name: &str) -> bool {
 
 /// Installs the rules through pkexec: the desktop asks for the password.
 pub fn install() -> Result<()> {
+    if cfg!(target_os = "macos") {
+        return Ok(());
+    }
     if !which("pkexec") {
         bail!(
             "pkexec is missing; install the rules by hand: sudo cp {RPIBOOT_RULE} {EMMC_RULE} {RULES_DIR}/ && sudo udevadm control --reload-rules"
