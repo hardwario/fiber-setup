@@ -41,7 +41,7 @@
   .shot img {
     display: block;
     width: 100%;
-    max-height: 520px;
+    max-height: 380px;
     object-fit: contain;
     border-radius: var(--radius);
     border: 1px solid var(--border);
@@ -50,7 +50,6 @@
   figcaption {
     font-size: 12.5px;
     color: var(--text-muted);
-    text-align: center;
   }
   .overlay {
     position: fixed;

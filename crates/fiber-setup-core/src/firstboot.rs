@@ -98,8 +98,9 @@ impl Settings {
                 "the user name may use only a-z, 0-9, '_' and '-', must start with a letter and cannot be a system account"
             );
         }
-        if self.password.chars().count() < 8 {
-            bail!("the password needs at least 8 characters");
+        // Its length is the user's business; without any, nobody could log in with it.
+        if self.password.is_empty() {
+            bail!("the password is missing");
         }
         if let Some(key) = &self.ssh_key {
             let key = key.trim();
@@ -310,6 +311,8 @@ mod tests {
         assert!(s.validate().is_err());
         let mut s = sample();
         s.password = "short".into();
+        assert!(s.validate().is_ok());
+        s.password = String::new();
         assert!(s.validate().is_err());
         let mut s = sample();
         s.country = "cz".into();

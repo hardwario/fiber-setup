@@ -1,11 +1,24 @@
 <script lang="ts">
-  /** Numbered instructions for the hands-on steps. */
-  let { items }: { items: string[] } = $props();
+  /** Numbered instructions for the hands-on steps, one under the other on a line; the photo that
+   * goes with a step sits right under its text. */
+  import { t } from "../i18n/index.svelte";
+  import Photo from "./Photo.svelte";
+
+  type Shot = { src: string; caption: string };
+  let { items, photos = {} }: { items: string[]; photos?: Record<number, Shot> } = $props();
 </script>
 
 <ol class="steps">
   {#each items as item, i (i)}
-    <li><span class="n">{i + 1}</span><span>{item}</span></li>
+    <li>
+      <span class="n">{i + 1}</span>
+      <div class="body">
+        <p>{item}</p>
+        {#if photos[i]}
+          <Photo src={photos[i].src} alt={t().common.photo} caption={photos[i].caption} />
+        {/if}
+      </div>
+    </li>
   {/each}
 </ol>
 
@@ -13,28 +26,59 @@
   .steps {
     display: flex;
     flex-direction: column;
-    gap: 10px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
   li {
+    position: relative;
     display: flex;
-    gap: 12px;
+    gap: 14px;
     align-items: flex-start;
+    padding-bottom: 16px;
     font-size: 14.5px;
     line-height: 1.5;
+  }
+  li:last-child {
+    padding-bottom: 0;
+  }
+  /* The line from one number to the next. */
+  li:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 13px;
+    top: 30px;
+    bottom: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--border-strong);
   }
   .n {
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: var(--accent-weak);
     color: var(--accent);
-    font-size: 12.5px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding-top: 3px;
+  }
+  p {
+    margin: 0;
+  }
+  .body :global(.photo) {
+    max-width: 520px;
+    padding-bottom: 4px;
   }
 </style>

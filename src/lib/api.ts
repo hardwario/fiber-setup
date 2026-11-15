@@ -32,6 +32,7 @@ export interface Api {
   cancel(): Promise<void>;
   findDevice(hostname: string): Promise<Found | null>;
   openLink(url: string): Promise<void>;
+  copyText(text: string): Promise<void>;
   onImage(cb: (e: JobEvent) => void, done: (d: Done<Prepared>) => void): Promise<Unlisten>;
   onFlash(cb: (e: JobEvent) => void, done: (d: Done<FlashReport>) => void): Promise<Unlisten>;
   /** Simulated FIBER only: the next FIBER ("Set up another FIBER"). */
@@ -64,6 +65,11 @@ async function tauriApi(): Promise<Api> {
     cancel: () => invoke("cancel"),
     findDevice: (hostname) => invoke("find_device", { hostname }),
     openLink: (url) => invoke("open_link", { url }),
+    // The system's clipboard through the app: the page's own is switched off in the Linux web view.
+    copyText: async (text) => {
+      const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+      await writeText(text);
+    },
     onImage: (cb, done) => pair<Prepared>("image", cb, done),
     onFlash: (cb, done) => pair<FlashReport>("flash", cb, done),
   };
@@ -71,8 +77,8 @@ async function tauriApi(): Promise<Api> {
 
 /** A FIBER that appears on USB a few seconds after the Connect step opens, stays in USB mode for a
  * few seconds after writing (until "RESET") and is found on the network on the third look.
- * `openLink` is the app's own in demo mode (a browser tab in a plain browser). */
-function simulatedApi(openLink?: (url: string) => Promise<void>): Api {
+ * `openLink` and `copyText` are the app's own in demo mode (the browser's in a plain browser). */
+function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (text: string) => Promise<void>): Api {
   const image = {
     id: "raspios-lite-arm64-2026-10-06",
     name: "Raspberry Pi OS Lite (64-bit)",
@@ -209,6 +215,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>): Api {
       (async (url) => {
         window.open(url, "_blank");
       }),
+    copyText: copyText ?? browserCopy,
     onImage: async (cb, done) => {
       imageCbs = [cb, done];
       return () => (imageCbs = null);
@@ -225,11 +232,28 @@ function simulatedApi(openLink?: (url: string) => Promise<void>): Api {
   };
 }
 
+/** The browser's clipboard, for the preview: the modern way, or the old one where that is refused. */
+async function browserCopy(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    if (!ok) throw new Error("the clipboard is not available");
+  }
+}
+
 /** In the app: the Tauri backend, or the simulated FIBER when started with `--demo`. */
 async function appApi(): Promise<Api> {
   const api = await tauriApi();
   const { invoke } = await import("@tauri-apps/api/core");
-  return (await invoke<boolean>("demo_mode")) ? simulatedApi(api.openLink) : api;
+  return (await invoke<boolean>("demo_mode")) ? simulatedApi(api.openLink, api.copyText) : api;
 }
 
 export const apiReady: Promise<Api> = inTauri ? appApi() : Promise.resolve(simulatedApi());

@@ -7,6 +7,25 @@ import type { AccessStatus, AppInfo, FlashReport, Found, JobEvent, Phase, Prepar
 
 export const STEPS = ["welcome", "image", "settings", "jumper", "connect", "write", "restart", "start", "done"] as const;
 export type StepId = (typeof STEPS)[number];
+/** The steps in the three parts the user goes through: getting ready at the computer, writing at
+ * the FIBER, and its start. The step list shows them as groups. */
+export const PHASES: { id: "prepare" | "write" | "start"; steps: StepId[] }[] = [
+  { id: "prepare", steps: ["welcome", "image", "settings"] },
+  { id: "write", steps: ["jumper", "connect", "write"] },
+  { id: "start", steps: ["restart", "start", "done"] },
+];
+/** The glyph each step goes by, in the step list and at the head of its page. */
+export const STEP_ICONS: Record<StepId, string> = {
+  welcome: "list-checks",
+  image: "package",
+  settings: "sliders",
+  jumper: "toggle-left",
+  connect: "usb",
+  write: "drive",
+  restart: "power",
+  start: "timer",
+  done: "circle-check",
+};
 export type Network = "wifi" | "ethernet" | "phone";
 
 interface Job<T> {
@@ -179,7 +198,7 @@ class Wizard {
     // With the FIBER software the name comes from the serial number; the field is not shown.
     if (!f.installFiber && !HOST.test(f.hostname)) e.hostname = "hostname";
     if (!USER.test(f.username) || SYSTEM_USERS.includes(f.username)) e.username = "user";
-    if ([...f.password].length < 8) e.password = "password";
+    if (!f.password) e.password = "password";
     else if (f.password !== f.password2) e.password2 = "passwordAgain";
     if (f.network === "wifi") {
       if (!f.ssid || utf8(f.ssid) > 32) e.ssid = "ssid";
@@ -267,6 +286,11 @@ class Wizard {
 
   cancel() {
     this.api?.cancel();
+  }
+
+  /** Puts a text (the login command) on the clipboard. */
+  async copy(text: string) {
+    await this.api?.copyText(text);
   }
 
   /** The name the FIBER software gives the FIBER, fiber-<serial> (from the write report), which it

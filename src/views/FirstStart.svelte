@@ -1,5 +1,6 @@
 <script lang="ts">
   import fiber from "../assets/photos/fiber-front-display.png";
+  import CopyCommand from "../lib/components/CopyCommand.svelte";
   import Icon from "../lib/components/Icon.svelte";
   import { fill, t } from "../lib/i18n/index.svelte";
   import { wizard } from "../lib/wizard.svelte";
@@ -30,83 +31,94 @@
   // One name from the first start: fiber-<serial> with the FIBER software.
   const hub = $derived(`${f.hostname}.local`);
   const timeline = $derived((f.installFiber ? t().start.timeline : t().start.timelinePlain).map((s) => fill(s, { hub })));
+  // What happens at each point of the timeline: it starts, installs, restarts.
+  const GLYPHS = ["power", "download", "refresh"];
   const looking = $derived(
     [...new Set([f.hostname, wizard.hubName].filter((n): n is string => !!n))].map((n) => `${n}.local`).join(" / "),
   );
 </script>
 
-<div class="split">
-  <div class="col">
-    <p class="lead">{t().start.lead}</p>
-    <section class="card pad">
-      <ol class="timeline">
-        {#each timeline as item, i (i)}
-          <li><Icon name="clock" size={15} /><span>{item}</span></li>
-        {/each}
-      </ol>
-    </section>
-    <section class="card pad">
-      {#if wizard.found}
-        <div class="found">
-          <Icon name="circle-check" size={18} />
-          <span>{fill(t().start.found, { name: `${wizard.found.name}.local`, ip: wizard.found.ip })}</span>
-        </div>
-        {#if wizard.found.ssh}
-          <code class="cmd">{fill(t().start.ssh, { user: f.username, name: wizard.found.name })}</code>
-        {/if}
-      {:else}
-        <div class="waiting">
-          <Icon name="loader" size={16} />
-          <span>{fill(t().start.looking, { name: looking })}</span>
-        </div>
-        <p class="muted small">{fill(t().start.notFound, { time: elapsed })} {t().start.sameNetwork}</p>
-      {/if}
-    </section>
-    <div class="note"><Icon name="monitor" size={16} /><span>{t().start.display}</span></div>
-    <p class="muted small">{t().start.log}</p>
-  </div>
-  <div class="col">
-    <img class="product" src={fiber} alt="HARDWARIO FIBER" />
-  </div>
-</div>
+<p class="lead">{t().start.lead}</p>
+
+<section class="card pad">
+  <ol class="timeline">
+    {#each timeline as item, i (i)}
+      <li><span class="glyph"><Icon name={GLYPHS[i] ?? "clock"} size={16} /></span><span>{item}</span></li>
+    {/each}
+  </ol>
+</section>
+
+<section class="card pad" class:good={!!wizard.found}>
+  {#if wizard.found}
+    <div class="state found">
+      <span class="glyph"><Icon name="circle-check" size={20} /></span>
+      <span>{fill(t().start.found, { name: `${wizard.found.name}.local`, ip: wizard.found.ip })}</span>
+    </div>
+    {#if wizard.found.ssh}
+      <p class="muted">{t().start.ssh}</p>
+      <CopyCommand text={`ssh ${f.username}@${wizard.found.name}.local`} />
+    {/if}
+  {:else}
+    <div class="state">
+      <span class="glyph"><Icon name="search" size={18} /></span>
+      <span>{fill(t().start.looking, { name: looking })}</span>
+      <Icon name="loader" size={16} />
+    </div>
+    <p class="muted small">{fill(t().start.notFound, { time: elapsed })} {t().start.sameNetwork}</p>
+  {/if}
+</section>
+
+<section class="card pad">
+  <h2><Icon name="monitor" size={16} /> {t().start.displayTitle}</h2>
+  <p>{t().start.display}</p>
+  <img class="product" src={fiber} alt="HARDWARIO FIBER" />
+</section>
+
+<p class="muted small">{t().start.log}</p>
 
 <style>
   .timeline {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
   .timeline li {
     display: flex;
-    gap: 10px;
-    align-items: flex-start;
-  }
-  .timeline :global(svg) {
-    flex-shrink: 0;
-    margin-top: 3px;
-    color: var(--text-muted);
-  }
-  .found,
-  .waiting {
-    display: flex;
+    gap: 12px;
     align-items: center;
-    gap: 10px;
-    font-weight: 500;
   }
-  .found :global(svg) {
-    color: var(--good);
-  }
-  .cmd {
-    display: block;
-    padding: 8px 10px;
+  .glyph {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
     border-radius: var(--radius-sm);
     background: var(--surface-2);
-    border: 1px solid var(--border);
-    -webkit-user-select: text;
-    user-select: text;
+    color: var(--text-2);
+  }
+  .card.good {
+    border-color: color-mix(in srgb, var(--good) 45%, transparent);
+  }
+  .state {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 500;
+  }
+  .state > :global(svg) {
+    color: var(--text-muted);
+  }
+  .state .glyph {
+    width: 36px;
+    height: 36px;
+  }
+  .found .glyph {
+    background: color-mix(in srgb, var(--good) 14%, transparent);
+    color: var(--good);
   }
   .small {
     font-size: 12.5px;
@@ -114,10 +126,12 @@
   p {
     margin: 0;
   }
+  /* The picture is square with the FIBER in its middle: only that middle band is shown. */
   .product {
-    width: 100%;
-    max-width: 380px;
-    margin: 0 auto;
     display: block;
+    width: 100%;
+    max-width: 300px;
+    aspect-ratio: 10 / 7;
+    object-fit: cover;
   }
 </style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CopyCommand from "../lib/components/CopyCommand.svelte";
   import Icon from "../lib/components/Icon.svelte";
   import { t } from "../lib/i18n/index.svelte";
   import { wizard } from "../lib/wizard.svelte";
@@ -10,20 +11,33 @@
 
 <p class="lead">{t().done.lead}</p>
 
+<section class="card pad">
+  <h2><Icon name="terminal" size={16} /> {t().done.loginTitle}</h2>
+  <p class="muted">{t().done.loginHint}</p>
+  <CopyCommand text={`ssh ${f.username}@${name}.local`} />
+  {#if wizard.found}
+    <p class="muted">{t().done.loginIp}</p>
+    <CopyCommand text={`ssh ${f.username}@${wizard.found.ip}`} />
+  {/if}
+</section>
+
 <section class="card pad summary">
-  <div class="row"><span class="k">{t().done.name}</span><span class="mono">{name}.local</span></div>
   <div class="row">
-    <span class="k">{t().done.login}</span><span class="mono">ssh {f.username}@{name}.local</span>
+    <Icon name="monitor" size={15} /><span class="k">{t().done.name}</span><span class="mono">{name}.local</span>
   </div>
   <div class="row">
-    <span class="k">{t().done.network}</span><span
+    <Icon name={f.network === "wifi" ? "wifi" : f.network === "phone" ? "phone" : "ethernet"} size={15} /><span class="k"
+      >{t().done.network}</span
+    ><span
       >{f.network === "wifi" ? `${t().settings.wifi}: ${f.ssid}` : f.network === "phone" ? t().settings.phone : t().settings.ethernet}{wizard.found
         ? ` · ${wizard.found.ip}`
         : ""}</span
     >
   </div>
   <div class="row">
-    <span class="k">{t().done.software}</span><span>{f.installFiber ? t().done.softwareFiber : t().done.softwarePlain}</span>
+    <Icon name="package" size={15} /><span class="k">{t().done.software}</span><span
+      >{f.installFiber ? t().done.softwareFiber : t().done.softwarePlain}</span
+    >
   </div>
 </section>
 
@@ -44,10 +58,14 @@
     display: flex;
     flex-wrap: wrap;
     overflow-wrap: anywhere;
+    align-items: center;
     gap: 10px;
   }
+  .row :global(svg) {
+    color: var(--text-muted);
+  }
   .k {
-    flex: 0 0 130px;
+    flex: 0 0 110px;
     color: var(--text-muted);
   }
   .row > span:last-child {
@@ -58,5 +76,8 @@
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+  }
+  p {
+    margin: 0;
   }
 </style>

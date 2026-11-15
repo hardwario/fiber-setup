@@ -372,6 +372,24 @@ code,
   height: 34px;
 }
 
+/* A field with a glyph at its start. */
+.control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.control > svg {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.control > .input {
+  padding-left: 33px;
+}
+
 .btn.large {
   height: 36px;
   padding: 0 18px;

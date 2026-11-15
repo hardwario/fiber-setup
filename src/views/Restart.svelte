@@ -2,7 +2,6 @@
   import ethernet from "../assets/photos/board-ethernet.jpg";
   import reset from "../assets/photos/board-usb-reset.jpg";
   import Icon from "../lib/components/Icon.svelte";
-  import Photo from "../lib/components/Photo.svelte";
   import Steps from "../lib/components/Steps.svelte";
   import { t } from "../lib/i18n/index.svelte";
   import { wizard } from "../lib/wizard.svelte";
@@ -24,19 +23,17 @@
   });
 </script>
 
-<div class="split">
-  <div class="col">
-    <section class="card pad"><Steps items={t().restart.steps} /></section>
-    {#if backInBoot}
-      <div class="note warning"><Icon name="warning" size={16} /><span>{t().restart.stillBoot}</span></div>
-    {:else if inUsb}
-      <div class="note"><Icon name="loader" size={16} /><span>{t().restart.waiting}</span></div>
-    {:else if seen}
-      <div class="note good"><Icon name="circle-check" size={16} /><span>{t().restart.left}</span></div>
-    {/if}
-  </div>
-  <div class="photos">
-    <Photo src={reset} alt={t().common.photo} caption={t().restart.caption} />
-    <Photo src={ethernet} alt={t().common.photo} caption={t().restart.ethernet} />
-  </div>
-</div>
+<section class="card pad">
+  <Steps
+    items={t().restart.steps}
+    photos={{ 1: { src: reset, caption: t().restart.caption }, 3: { src: ethernet, caption: t().restart.ethernet } }}
+  />
+</section>
+
+{#if backInBoot}
+  <div class="note warning"><Icon name="warning" size={16} /><span>{t().restart.stillBoot}</span></div>
+{:else if inUsb}
+  <div class="note"><Icon name="loader" size={16} /><span>{t().restart.waiting}</span></div>
+{:else if seen}
+  <div class="note good"><Icon name="circle-check" size={16} /><span>{t().restart.left}</span></div>
+{/if}

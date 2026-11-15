@@ -10,7 +10,7 @@
   import PrefsSwitcher from "./lib/components/PrefsSwitcher.svelte";
   import { fill, t } from "./lib/i18n/index.svelte";
   import { prefs } from "./lib/prefs.svelte";
-  import { STEPS, wizard } from "./lib/wizard.svelte";
+  import { PHASES, STEPS, STEP_ICONS, wizard } from "./lib/wizard.svelte";
   import Connect from "./views/Connect.svelte";
   import Done from "./views/Done.svelte";
   import FirstStart from "./views/FirstStart.svelte";
@@ -21,7 +21,7 @@
   import Welcome from "./views/Welcome.svelte";
   import Write from "./views/Write.svelte";
 
-  /** The sidebar folded to its numbers; remembered, as in tower-bridge. */
+  /** The sidebar folded to its glyphs; remembered, as in tower-bridge. */
   const COLLAPSED_KEY = "fiber-setup.sidebar.collapsed";
   let collapsed = $state(readCollapsed());
 
@@ -59,6 +59,8 @@
     done: t().done.title,
   });
   const last = $derived(wizard.index === STEPS.length - 1);
+  /** A step that is behind the user; all of them once the last one is reached. */
+  const completed = (i: number) => i < wizard.reached || wizard.reached === STEPS.length - 1;
   const busy = $derived(wizard.flash.busy);
   let main = $state<HTMLElement | null>(null);
   $effect(() => {
@@ -83,23 +85,46 @@
         </div>
       {/if}
     </div>
-    <!-- The steps as a flow (Marek's sketch, 2026-11-04): a line down the middle, each step a box
-         with its number in a circle centred on the box's top edge. -->
-    <nav class="flow">
-      {#each STEPS as step, i (step)}
-        {@const reachable = i <= wizard.reached && !busy}
-        <button
-          class:active={wizard.step === step}
-          class:done={i < wizard.reached && wizard.step !== step}
-          aria-current={wizard.step === step ? "step" : undefined}
-          disabled={!reachable}
-          title={collapsed ? t().steps[step] : undefined}
-          aria-label={collapsed ? t().steps[step] : undefined}
-          onclick={() => wizard.go(step)}
-        >
-          <span class="num">{i + 1}</span>
-          {#if !collapsed}<span class="box">{t().steps[step]}</span>{/if}
-        </button>
+    <!-- The steps in their three parts (Prepare, Write, Start), each step by its glyph: nine steps
+         read as three. The open one is filled, the ones behind carry a check. -->
+    <nav class="phases" aria-label={t().nav.steps}>
+      {#each PHASES as phase (phase.id)}
+        {@const behind = phase.steps.filter((s) => completed(STEPS.indexOf(s))).length}
+        <div class="phase">
+          {#if !collapsed}
+            <div class="phase-head" class:complete={behind === phase.steps.length}>
+              <span>{t().nav.phases[phase.id]}</span>
+              <span class="count">
+                {#if behind === phase.steps.length}
+                  <Icon name="check" size={11} stroke={3} />
+                {:else}
+                  {fill(t().nav.phaseCount, { done: behind, total: phase.steps.length })}
+                {/if}
+              </span>
+            </div>
+          {/if}
+          {#each phase.steps as step (step)}
+            {@const i = STEPS.indexOf(step)}
+            {@const reachable = i <= wizard.reached && !busy}
+            {@const done = completed(i) && wizard.step !== step}
+            <button
+              class="item"
+              class:active={wizard.step === step}
+              class:done
+              aria-current={wizard.step === step ? "step" : undefined}
+              disabled={!reachable}
+              title={collapsed ? t().steps[step] : undefined}
+              aria-label={collapsed ? t().steps[step] : undefined}
+              onclick={() => wizard.go(step)}
+            >
+              <Icon name={STEP_ICONS[step]} size={15} />
+              {#if !collapsed}
+                <span class="label">{t().steps[step]}</span>
+                {#if done}<span class="mark"><Icon name="check" size={13} stroke={3} /></span>{/if}
+              {/if}
+            </button>
+          {/each}
+        </div>
       {/each}
     </nav>
     {#if !collapsed}
@@ -151,7 +176,8 @@
       <div class="center muted">{t().common.loading}</div>
     {:else}
       <div class="view">
-        <div class="page-head">
+        <div class="page-head" class:finished={last}>
+          <div class="glyph"><Icon name={STEP_ICONS[wizard.step]} size={24} /></div>
           <div>
             <div class="step-of">{fill(t().common.stepOf, { n: wizard.index + 1, total: STEPS.length })}</div>
             <h1>{titles[wizard.step]}</h1>
@@ -209,8 +235,8 @@
   .app.collapsed {
     grid-template-columns: 72px 1fr;
   }
-  /* The menu half as large again as tower-bridge's (Marek, 2026-11-04): the window's page zoom
-     (src-tauri) gives 1.25, this the rest, inside the 250 px / 72 px columns above. */
+  /* The menu half as large again as tower-bridge's: the window's page zoom (src-tauri) gives
+     1.25, this the rest, inside the 250 px / 72 px columns above. */
   .sidebar {
     zoom: 1.2;
     display: flex;
@@ -258,103 +284,95 @@
     line-height: 1;
     color: var(--text-muted);
   }
-  .flow {
-    position: relative;
+  .phases {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 12px;
     padding-top: 6px;
   }
-  /* The line the steps hang on; boxes and circles are opaque, so it shows only between them. */
-  .flow::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    width: 2px;
-    margin-left: -1px;
-    background: var(--border-strong);
-  }
-  .flow button {
-    position: relative;
+  .phase {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--text-2);
-    font-weight: 500;
-    cursor: pointer;
+    gap: 2px;
   }
-  .num {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    /* Half of it over the box: centred on the box's top edge. */
-    margin-bottom: -11px;
-    border-radius: 50%;
-    border: 1.5px solid var(--border-strong);
-    background: var(--sidebar);
-    color: var(--text-muted);
-    font-size: 11.5px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
-  .box {
+  .phase-head {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 100%;
-    min-height: 28px;
-    padding: 11px 8px 3px;
-    border: 1.5px solid var(--border-strong);
-    border-radius: 10px;
-    background: var(--sidebar);
-    font-size: 13px;
-    line-height: 1.2;
-    text-align: center;
+    justify-content: space-between;
+    padding: 0 8px 3px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
-  .flow button:hover:not(:disabled):not(.active) .box {
-    border-color: var(--text-muted);
+  .phase-head .count {
+    display: grid;
+    letter-spacing: 0;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    text-transform: none;
+  }
+  .phase-head.complete {
+    color: var(--good-text);
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 30px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+  }
+  .item:hover:not(:disabled):not(.active) {
+    background: var(--hover);
     color: var(--text);
   }
-  .flow button:disabled {
+  .item:disabled {
+    color: var(--text-muted);
     cursor: default;
   }
-  .flow button:disabled .box {
-    border-color: var(--border);
-    color: var(--text-muted);
-  }
-  .flow button:disabled .num {
-    border-color: var(--border);
-  }
-  .flow button.active .num {
+  .item.active {
     background: var(--accent);
-    border-color: var(--accent);
     color: #fff;
-  }
-  .flow button.active .box {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, var(--sidebar));
-    color: var(--text);
     font-weight: 600;
   }
-  .flow button.done .num {
-    background: var(--good);
-    border-color: var(--good);
-    color: #fff;
+  .item .label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .collapsed .flow {
-    gap: 10px;
+  .item .mark {
+    display: grid;
+    margin-left: auto;
+    color: var(--good);
   }
-  .collapsed .num {
-    margin-bottom: 0;
+  /* Folded: the glyphs alone, a line between the parts; a step behind the user is green. */
+  .collapsed .phases {
+    gap: 0;
+  }
+  .collapsed .phase {
+    align-items: center;
+    padding: 6px 0;
+  }
+  .collapsed .phase + .phase {
+    border-top: 1px solid var(--border);
+  }
+  .collapsed .item {
+    justify-content: center;
+    width: 32px;
+    padding: 0;
+  }
+  .collapsed .item.done {
+    color: var(--good-text);
   }
   .bottom {
     margin-top: auto;
@@ -438,15 +456,35 @@
     overflow-y: auto;
     min-width: 0;
   }
+  /* One column, read from the top down: the page's head, then its parts one under the other. */
   .view {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 16px;
     width: 100%;
-    max-width: 1100px;
+    max-width: 780px;
     margin: 0 auto;
-    padding: 22px 26px 24px;
+    padding: 24px 28px 28px;
+  }
+  .page-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .page-head .glyph {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border-radius: 14px;
+    background: var(--accent-weak);
+    color: var(--accent);
+  }
+  .page-head.finished .glyph {
+    background: color-mix(in srgb, var(--good) 14%, transparent);
+    color: var(--good);
   }
   .page-head h1 {
     font-size: 22px;
@@ -468,9 +506,9 @@
   .footer-inner {
     display: flex;
     justify-content: space-between;
-    max-width: 1100px;
+    max-width: 780px;
     margin: 0 auto;
-    padding: 12px 26px;
+    padding: 12px 28px;
   }
   .center {
     display: grid;
@@ -498,25 +536,6 @@
   }
   main :global(.card h2 svg) {
     color: var(--accent);
-  }
-  main :global(.split) {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    gap: 20px;
-    align-items: start;
-  }
-  /* Landscape photos, one under the other. */
-  main :global(.photos) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-    min-width: 0;
-  }
-  main :global(.col) {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    min-width: 0;
   }
   main :global(.note) {
     display: flex;
@@ -565,10 +584,5 @@
     background: color-mix(in srgb, var(--good) 12%, transparent);
     border-color: transparent;
     color: var(--good-text);
-  }
-  @media (max-width: 980px) {
-    main :global(.split) {
-      grid-template-columns: 1fr;
-    }
   }
 </style>
