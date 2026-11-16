@@ -267,7 +267,7 @@ fn usb_boards() -> Vec<usb::UsbBoard> {
 fn flash_start(app: AppHandle, state: State<'_, AppState>, settings: Settings, port: String) -> Result<(), String> {
     settings.validate().map_err(|e| format!("{e:#}"))?;
     let image = state.prepared().ok_or("the image is not ready yet")?;
-    let tools = tools(&app).ok_or("rpiboot is missing from this installation")?;
+    let tools = tools(&app).ok_or("the files that start a FIBER over USB are missing from this installation")?;
     state.start()?;
     std::thread::spawn(move || {
         let state = app.state::<AppState>();

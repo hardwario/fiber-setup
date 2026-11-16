@@ -1,11 +1,11 @@
 //! Raspberry Pi boards on USB: a FIBER with its jumper on BOOT shows up as the BCM2711 boot ROM
-//! (`0a5c:2711`), and after rpiboot as the mass-storage gadget. Found in sysfs on Linux, in
+//! (`0a5c:2711`), and once it was started over USB (`rpiboot.rs`) as the mass-storage gadget. Found in sysfs on Linux, in
 //! the I/O Registry on macOS (`macos.rs`) and among Windows' USB devices (`windows.rs`).
 
 use serde::Serialize;
 use std::path::Path;
 
-/// Broadcom, the vendor of the boot ROM and of the gadget rpiboot loads.
+/// Broadcom, the vendor of the boot ROM and of the gadget it is sent.
 pub(crate) const BROADCOM_VID: &str = "0a5c";
 /// Boot ROM product ids: BCM2710, BCM2711 (two revisions) and BCM2712.
 pub(crate) const BOOT_PIDS: [&str; 4] = ["2763", "2764", "2711", "2712"];
@@ -13,7 +13,7 @@ pub(crate) const BOOT_PIDS: [&str; 4] = ["2763", "2764", "2711", "2712"];
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoardKind {
-    /// Waiting for rpiboot (jumper on BOOT, powered, USB-B connected).
+    /// Waiting in its boot ROM (jumper on BOOT, powered, USB-B connected).
     Boot,
     /// Running the mass-storage gadget: its eMMC is a disk on this computer.
     Gadget,
@@ -21,10 +21,10 @@ pub enum BoardKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UsbBoard {
-    /// The USB path of its port, e.g. `3-2` or `1-1.4`: the name rpiboot's `-p` takes and the
-    /// name the gadget gets on the same port. On Linux the kernel's name for the port; on macOS
-    /// the same form from the device's location, as libusb (and so rpiboot) builds it there. On
-    /// Windows a name of that form from the device's location path, which rpiboot does not know.
+    /// The USB path of its port, e.g. `3-2` or `1-1.4`: a board in boot mode and the gadget it
+    /// becomes have the same one. On Linux the kernel's name for the port; on macOS the same
+    /// form from the device's location; on Windows a name of that form from the device's
+    /// location path.
     pub port: String,
     pub kind: BoardKind,
     pub product_id: String,
@@ -50,6 +50,22 @@ pub fn boards() -> Vec<UsbBoard> {
 #[cfg(windows)]
 pub fn boards() -> Vec<UsbBoard> {
     crate::windows::boards()
+}
+
+/// The port of a USB device as [`UsbBoard::port`] names it, for a device from `nusb`'s list.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) fn port_of(device: &nusb::DeviceInfo) -> Option<String> {
+    device.sysfs_path().file_name().map(|name| name.to_string_lossy().into_owned())
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn port_of(device: &nusb::DeviceInfo) -> Option<String> {
+    Some(crate::macos::port_of(device.location_id()))
+}
+
+#[cfg(windows)]
+pub(crate) fn port_of(device: &nusb::DeviceInfo) -> Option<String> {
+    device.location_paths().iter().find_map(|path| crate::windows::port_name(&path.to_string_lossy()))
 }
 
 /// The boards in a sysfs USB device directory (Linux).

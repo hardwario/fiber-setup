@@ -49,11 +49,6 @@
     "linux": {
       "appimage": {
         "bundleMediaFramework": false
-      },
-      "deb": {
-        "depends": [
-          "libusb-1.0-0"
-        ]
       }
     }
   }

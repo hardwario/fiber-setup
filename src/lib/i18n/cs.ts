@@ -180,7 +180,7 @@ export const cs: Messages = {
     driverButton: "Nainstalovat ovladač USB",
     driverDone: "Ovladač USB je nainstalován.",
     driverFailed: "Ovladač USB nebyl nainstalován: {error}",
-    toolsMissing: "V této instalaci chybí rpiboot, takže FIBER nejde spustit v režimu USB.",
+    toolsMissing: "Tato instalace není úplná: chybí soubory, kterými se FIBER spouští přes USB. Nainstalujte FIBER Setup znovu.",
   },
   write: {
     title: "Zápis do FIBERu",

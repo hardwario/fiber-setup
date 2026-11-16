@@ -2,8 +2,8 @@
 ;
 ; In that mode the FIBER's Raspberry Pi Compute Module shows its boot ROM on USB, and Windows has
 ; no driver for it. This binds the boot ROM to WinUSB, the driver that is part of Windows, so
-; rpiboot can talk to it. It installs no file: it only tells Windows which of its own drivers
-; to use. The same four devices as Raspberry Pi's rpiboot installer.
+; the app can talk to it. It installs no file: it only tells Windows which of its own drivers
+; to use. The same four devices as the installer of Raspberry Pi's rpiboot.
 ;
 ; The catalog (fiber-usbboot.cat) is made from this file and signed by HARDWARIO a.s. when a
 ; release is built (docs/release.md); any change here needs a new catalog.
@@ -43,7 +43,7 @@ Needs   = WINUSB.NT.Services
 [WinUsb_Install.HW]
 AddReg = Interface_AddReg
 
-; The interface libusb (and so rpiboot) opens the device by.
+; The interface the app opens the device by.
 [Interface_AddReg]
 HKR,,DeviceInterfaceGUIDs,0x10000,"{D0F175E3-D514-4713-B4D3-0C47B2FF7FCC}"
 

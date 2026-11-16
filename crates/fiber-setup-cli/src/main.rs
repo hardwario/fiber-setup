@@ -30,10 +30,17 @@ enum Cmd {
         #[arg(long)]
         install: bool,
     },
+    /// Start the FIBER (jumper on BOOT) over USB so that its eMMC shows as a disk on this
+    /// computer, and stop there: nothing is written.
+    Boot {
+        /// The USB port of the FIBER in boot mode (see `devices`); found by itself when there is one.
+        #[arg(long)]
+        port: Option<String>,
+    },
     /// Write the image with the first-boot settings to the FIBER (or, with --to-file, to a file).
     /// Passwords come from FIBER_SETUP_PASSWORD and FIBER_SETUP_WIFI_PASSWORD.
     Flash(Box<FlashArgs>),
-    /// Show the first-boot files on an image file or a FIBER's eMMC (jumper on BOOT, after rpiboot).
+    /// Show the first-boot files on an image file or a FIBER's eMMC (jumper on BOOT, once it shows as a disk).
     Inspect { path: PathBuf },
     /// Look for <hostname>.local on this network.
     Find {
@@ -133,6 +140,10 @@ fn run() -> Result<()> {
             }
             println!("{}", serde_json::to_string_pretty(&access::status())?);
         }
+        Cmd::Boot { port } => {
+            let emmc = flash::start_gadget(&tools()?, &boot_port(port)?, 1, &print_event, &cancel)?;
+            println!("{}", serde_json::to_string_pretty(&emmc)?);
+        }
         Cmd::Flash(a) => flash_cmd(*a, &cancel)?,
         Cmd::Inspect { path } => inspect(&path)?,
         Cmd::Find { hostname } => match check::find(&hostname) {
@@ -141,6 +152,26 @@ fn run() -> Result<()> {
         },
     }
     Ok(())
+}
+
+/// The gadget's files, which a FIBER is started with over USB.
+fn tools() -> Result<rpiboot::Tools> {
+    rpiboot::find_tools(&[]).context(
+        "the gadget's files (mass-storage-gadget64) are not found; set FIBER_SETUP_USBBOOT to the folder they are in, or to a usbboot checkout",
+    )
+}
+
+/// The USB port to work on: the one given, or that of the only board in boot mode.
+fn boot_port(port: Option<String>) -> Result<String> {
+    if let Some(port) = port {
+        return Ok(port);
+    }
+    let boot: Vec<_> = usb::boards().into_iter().filter(|b| b.kind == usb::BoardKind::Boot).collect();
+    match boot.as_slice() {
+        [one] => Ok(one.port.clone()),
+        [] => bail!("no FIBER in boot mode on USB (jumper on BOOT, power, USB-B cable, RESET)"),
+        _ => bail!("several boards in boot mode; choose one with --port (see `devices`)"),
+    }
 }
 
 fn flash_cmd(a: FlashArgs, cancel: &Cancel) -> Result<()> {
@@ -171,20 +202,7 @@ fn flash_cmd(a: FlashArgs, cancel: &Cancel) -> Result<()> {
     let report = if let Some(out) = a.to_file {
         flash::run_to_file(&image, &settings, &out, &print_event, cancel)?
     } else {
-        let tools =
-            rpiboot::find_tools(&[]).context("rpiboot not found; set FIBER_SETUP_USBBOOT to a usbboot checkout")?;
-        let port = match a.port {
-            Some(p) => p,
-            None => {
-                let boot: Vec<_> = usb::boards().into_iter().filter(|b| b.kind == usb::BoardKind::Boot).collect();
-                match boot.as_slice() {
-                    [one] => one.port.clone(),
-                    [] => bail!("no FIBER in boot mode on USB (jumper on BOOT, power, USB-B cable, RESET)"),
-                    _ => bail!("several boards in boot mode; choose one with --port (see `devices`)"),
-                }
-            }
-        };
-        flash::run(&tools, &image, &settings, &port, &print_event, cancel)?
+        flash::run(&tools()?, &image, &settings, &boot_port(a.port)?, &print_event, cancel)?
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())

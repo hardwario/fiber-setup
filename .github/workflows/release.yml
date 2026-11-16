@@ -38,7 +38,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libusb-1.0-0-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: stable
@@ -49,30 +49,8 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      # The gadget's files (on Windows the USB driver too).
       - run: npm run usbboot
-        if: runner.os != 'Windows'
-      # On Windows rpiboot is built in Cygwin, as Raspberry Pi builds it. Cygwin stays off the
-      # PATH: its tools must not stand in for Windows' own in the other steps.
-      - name: Cygwin, for rpiboot
-        if: runner.os == 'Windows'
-        id: cygwin
-        uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7
-        with:
-          add-to-path: false
-          packages: |
-            gcc-core
-            make
-            git
-            pkg-config
-            libusb1.0-devel
-      - name: rpiboot and the gadget (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          CHERE_INVOKING: 1
-        run: |
-          & "${{ steps.cygwin.outputs.root }}\bin\bash.exe" --login -o igncr -eo pipefail scripts/fetch-usbboot.sh
-          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: The USB driver's catalog
         if: runner.os == 'Windows'
         shell: pwsh
@@ -80,8 +58,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      # What only Windows can show: rpiboot.exe starts, Windows takes the USB driver, the
-      # installer installs and uninstalls.
+      # What only Windows can show: Windows takes the USB driver, the installer installs and
+      # uninstalls.
       - name: The Windows package
         if: runner.os == 'Windows'
         shell: pwsh
@@ -130,38 +108,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libusb-1.0-0-dev patchelf libfuse2
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libfuse2
       # No signing secrets in this job: it runs every dependency's build
-      # script, and builds rpiboot and libusb from their sources. The macOS
-      # app comes out ad-hoc signed and the Windows exe unsigned; the sign
-      # jobs sign them.
-      - name: rpiboot and the gadget
-        if: runner.os != 'Windows'
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
+      # script. The macOS app comes out ad-hoc signed and the Windows exe
+      # unsigned; the sign jobs sign them.
+      - name: The gadget's files
         run: npm run usbboot
-      # On Windows rpiboot is built in Cygwin, as Raspberry Pi builds it. Cygwin stays off the
-      # PATH: its tools must not stand in for Windows' own in the other steps.
-      - name: Cygwin, for rpiboot
-        if: runner.os == 'Windows'
-        id: cygwin
-        uses: cygwin/cygwin-install-action@5a1b0cd107181fa6bb6bf3f90d500f4fb3132f18 # v7
-        with:
-          add-to-path: false
-          packages: |
-            gcc-core
-            make
-            git
-            pkg-config
-            libusb1.0-devel
-      - name: rpiboot and the gadget (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          CHERE_INVOKING: 1
-        run: |
-          & "${{ steps.cygwin.outputs.root }}\bin\bash.exe" --login -o igncr -eo pipefail scripts/fetch-usbboot.sh
-          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: The USB driver's catalog
         if: runner.os == 'Windows'
         shell: pwsh
@@ -204,8 +156,8 @@ jobs:
           mkdir -p out
           case "$NAME" in
             # Signed, notarized, put in a dmg and checksummed by sign-macos.
-            # ditto keeps what a plain artifact loses: file modes (rpiboot
-            # must stay executable) and links.
+            # ditto keeps what a plain artifact loses: file modes (the app's
+            # program must stay executable) and links.
             macos) ditto -c -k --keepParent "target/universal-apple-darwin/release/bundle/macos/FIBER Setup.app" out/fiber-setup-app.zip ;;
             linux) cp target/release/bundle/appimage/*.AppImage "out/fiber-setup-$v-linux-x86_64.AppImage"
                    cp target/release/bundle/deb/*.deb "out/fiber-setup-$v-linux-x86_64.deb" ;;
@@ -261,9 +213,8 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      # Ours only: the app, rpiboot (built here from Raspberry Pi's source),
-      # the USB driver's catalog and the uninstaller. Not Cygwin's DLLs and
-      # not Microsoft's WebView2 installer: those are other people's files.
+      # Ours only: the app, the USB driver's catalog and the uninstaller. Not
+      # Microsoft's WebView2 installer: that is signed by Microsoft.
       - uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: https://weu.codesigning.azure.net/
@@ -271,7 +222,6 @@ jobs:
           certificate-profile-name: hardwario
           files: |
             ${{ github.workspace }}\work\app\fiber-setup.exe
-            ${{ github.workspace }}\work\app\usbboot\rpiboot.exe
             ${{ github.workspace }}\work\app\usbboot\driver\fiber-usbboot.cat
             ${{ github.workspace }}\work\uninstall.exe
           file-digest: SHA256
@@ -298,7 +248,7 @@ jobs:
           exclude-interactive-browser-credential: true
       - name: Verify the signatures
         shell: pwsh
-        run: scripts/windows-verify.ps1 -Work work -Files app\fiber-setup.exe, app\usbboot\rpiboot.exe, app\usbboot\driver\fiber-usbboot.cat, uninstall.exe
+        run: scripts/windows-verify.ps1 -Work work -Files app\fiber-setup.exe, app\usbboot\driver\fiber-usbboot.cat, uninstall.exe
       # The question a signature check cannot answer: does Windows take a
       # driver package signed this way? Its signer is put among this
       # machine's trusted publishers (what "Always trust software from
@@ -417,17 +367,11 @@ jobs:
           mkdir -p work out
           ditto -x -k unsigned/unsigned-macos/fiber-setup-app.zip work
           app="work/FIBER Setup.app"
-          usbboot="$app/Contents/Resources/usbboot"
           # Apple refuses an app with any program in it that is not signed, so
-          # the programs in it must be exactly the three signed below.
+          # the only program in it must be the app's own, signed below.
           programs=$(cd "$app" && find . -type f -exec sh -c 'file -b "$1" | grep -q "Mach-O" && echo "${1#./}"' _ {} \; | sort)
           echo "$programs"
-          expected=$(printf '%s\n' Contents/MacOS/fiber-setup Contents/Resources/usbboot/libusb-1.0.0.dylib Contents/Resources/usbboot/rpiboot)
-          if [ "$programs" != "$expected" ]; then echo "::error::the app does not hold exactly the three programs this job signs"; exit 1; fi
-          # Inside out: the library rpiboot loads, rpiboot, then the app, whose
-          # signature seals the two (never --deep).
-          sign "$usbboot/libusb-1.0.0.dylib"
-          sign "$usbboot/rpiboot"
+          if [ "$programs" != Contents/MacOS/fiber-setup ]; then echo "::error::the app holds another program than the one this job signs"; exit 1; fi
           sign "$app"
           codesign --verify --strict --verbose=2 "$app"
           # The app, stapled so that it opens offline too.
@@ -452,16 +396,12 @@ jobs:
           dmg=$(echo out/*.dmg)
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
           xcrun stapler validate "$dmg"
-          for f in "$app/Contents/MacOS/fiber-setup" "$app/Contents/Resources/usbboot/rpiboot" "$app/Contents/Resources/usbboot/libusb-1.0.0.dylib"; do
-            info=$(codesign -dvv "$f" 2>&1)
-            grep -q "Authority=Developer ID Application" <<< "$info" || { echo "::error::$f is not signed with Developer ID"; exit 1; }
-            grep -q "^Timestamp=" <<< "$info" || { echo "::error::the signature of $f has no timestamp"; exit 1; }
-            grep -q "flags=0x10000(runtime)" <<< "$info" || { echo "::error::$f lacks the hardened runtime"; exit 1; }
-            [ "$(lipo -archs "$f" | tr ' ' '\n' | sort | xargs)" = "arm64 x86_64" ] || { echo "::error::$f is not for Apple silicon and Intel"; exit 1; }
-          done
-          # With the hardened runtime rpiboot loads only a library signed by
-          # the same team: it must still start with the libusb next to it.
-          "$app/Contents/Resources/usbboot/rpiboot" -h | grep -q "Usage: rpiboot" || { echo "::error::the signed rpiboot does not start"; exit 1; }
+          f="$app/Contents/MacOS/fiber-setup"
+          info=$(codesign -dvv "$f" 2>&1)
+          grep -q "Authority=Developer ID Application" <<< "$info" || { echo "::error::$f is not signed with Developer ID"; exit 1; }
+          grep -q "^Timestamp=" <<< "$info" || { echo "::error::the signature of $f has no timestamp"; exit 1; }
+          grep -q "flags=0x10000(runtime)" <<< "$info" || { echo "::error::$f lacks the hardened runtime"; exit 1; }
+          [ "$(lipo -archs "$f" | tr ' ' '\n' | sort | xargs)" = "arm64 x86_64" ] || { echo "::error::$f is not for Apple silicon and Intel"; exit 1; }
       - name: Checksums
         run: |
           set -euo pipefail

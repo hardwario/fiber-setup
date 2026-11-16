@@ -6,9 +6,9 @@
 //! asks for the password each time it is written (`macos.rs`). There the rules count as
 //! installed and installing them does nothing.
 //!
-//! On Windows the step installs a driver: the boot ROM has none there, and rpiboot talks to it
+//! On Windows the step installs a driver: the boot ROM has none there, and the app talks to it
 //! through WinUSB. The driver package (an .inf that binds the boot ROM to Windows' own WinUSB,
-//! with HARDWARIO's signature) lies next to rpiboot, in `driver/` (`windows.rs`).
+//! with HARDWARIO's signature) lies next to the gadget's folder, in `driver/` (`windows.rs`).
 
 #[cfg(not(windows))]
 use anyhow::bail;
@@ -75,16 +75,15 @@ fn which(name: &str) -> bool {
 }
 
 /// Installs the rules through pkexec: the desktop asks for the password. On Windows, installs
-/// the driver that lies next to rpiboot (`tools`): Windows asks whether to trust its publisher.
+/// the driver that lies next to the gadget's folder (`tools`): Windows asks whether to trust its
+/// publisher.
 pub fn install(tools: Option<&crate::rpiboot::Tools>) -> Result<()> {
     if cfg!(target_os = "macos") {
         return Ok(());
     }
     #[cfg(windows)]
     {
-        let dir = tools
-            .and_then(|t| t.rpiboot.parent())
-            .context("rpiboot and the USB driver are missing from this installation")?;
+        let dir = tools.and_then(|t| t.gadget.parent()).context("the USB driver is missing from this installation")?;
         crate::windows::install_driver(&dir.join("driver").join(crate::windows::DRIVER_INF))
     }
     #[cfg(not(windows))]

@@ -55,17 +55,23 @@ pub struct UsbDevice {
     pub disks: Vec<Disk>,
 }
 
+/// A USB port's name from a device's location id, the way libusb names ports on macOS: the bus
+/// number, then the port on each hub down to the device (`1-1`, `2-1.3`). A board in boot mode
+/// and the gadget it becomes are on one port, so they have one name.
+pub fn port_of(location_id: u32) -> String {
+    let mut out = (location_id >> 24).to_string();
+    let ports = (0..6).map(|i| (location_id >> (20 - 4 * i)) & 0xf).take_while(|p| *p != 0);
+    for (i, p) in ports.enumerate() {
+        out.push(if i == 0 { '-' } else { '.' });
+        out.push_str(&p.to_string());
+    }
+    out
+}
+
 impl UsbDevice {
-    /// The port the way libusb names it on macOS, which is what rpiboot's `-p` compares with:
-    /// the bus number, then the port on each hub down to the device (`1-1`, `2-1.3`).
+    /// The port this device is on ([`port_of`]).
     pub fn port(&self) -> String {
-        let mut out = (self.location_id >> 24).to_string();
-        let ports = (0..6).map(|i| (self.location_id >> (20 - 4 * i)) & 0xf).take_while(|p| *p != 0);
-        for (i, p) in ports.enumerate() {
-            out.push(if i == 0 { '-' } else { '.' });
-            out.push_str(&p.to_string());
-        }
-        out
+        port_of(self.location_id)
     }
 
     fn block_device(&self, d: &Disk) -> BlockDevice {
@@ -696,6 +702,21 @@ mod tests {
         assert!(parse(b"").unwrap().is_empty());
         assert!(parse(b"\n").unwrap().is_empty());
         assert!(parse(b"not a property list").is_err());
+    }
+
+    /// The two ways this app looks at USB must name a port alike: the board list comes from
+    /// the I/O Registry, the device to start is found through `nusb`. With whatever is
+    /// connected to this computer now.
+    #[test]
+    fn both_views_of_usb_name_the_ports_alike() {
+        use nusb::MaybeFuture;
+        let ours: Vec<(u16, u16, String)> =
+            usb_devices().unwrap().iter().map(|d| (d.vendor_id, d.product_id, d.port())).collect();
+        for device in nusb::list_devices().wait().unwrap() {
+            let port = crate::usb::port_of(&device).unwrap();
+            let seen = (device.vendor_id(), device.product_id(), port);
+            assert!(ours.contains(&seen), "{seen:x?} is not among {ours:x?}");
+        }
     }
 
     #[test]

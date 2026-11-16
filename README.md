@@ -22,9 +22,11 @@ FIBER; the macOS and Windows sides have not had a FIBER connected at all yet.
    the network and the clock, then runs HARDWARIO's one-command installer
    `curl -fsSL https://raw.githubusercontent.com/hardwario/fiber-agent/main/bootstrap.sh | sudo bash`
    (the latest fiber-agent release; v6.0.0 on 2026-11-04).
-3. **USB mode.** With the jumper on BOOT the CM4 boot ROM appears on USB (`0a5c:2711`). The bundled
-   [rpiboot](https://github.com/raspberrypi/usbboot) starts the mass-storage gadget on that port, and the eMMC
-   appears as a disk. Only a disk on that same USB port with the CM4 gadget's identity is ever written.
+3. **USB mode.** With the jumper on BOOT the CM4 boot ROM appears on USB (`0a5c:2711`). The app sends it
+   Raspberry Pi's boot code and then the mass-storage gadget, the way Raspberry Pi's
+   [rpiboot](https://github.com/raspberrypi/usbboot) does (`crates/fiber-setup-core/src/rpiboot.rs`; no
+   separate program, no libusb), and the eMMC appears as a disk. Only a disk on that same USB port with the
+   CM4 gadget's identity is ever written.
 4. **Write and check.** The image is written (partition table last), then read back from the eMMC and
    compared byte for byte.
 5. **First start.** The FIBER joins the network, installs the software (about 10 minutes, needs the internet)
@@ -36,15 +38,14 @@ FIBER; the macOS and Windows sides have not had a FIBER connected at all yet.
 
 ```sh
 npm ci
-npm run usbboot             # rpiboot + gadget into src-tauri/resources/usbboot
+npm run usbboot             # the gadget's files into src-tauri/resources/usbboot
 npm run tauri dev           # the app with hot reload
 npm run dev                 # the screens in a browser with a simulated FIBER: http://localhost:1430
 ```
 
-`npm run usbboot` takes rpiboot from a built usbboot checkout in `~/github/raspberrypi/usbboot` (or
-`USBBOOT_DIR`). Without one it fetches and builds the commit 0.1.0 was made with; that needs git, make and
-a C compiler, on Linux also libusb's headers (`libusb-1.0-0-dev` on Debian/Ubuntu). On macOS it builds
-libusb too, from its pinned source release, and both come out for Apple silicon and Intel.
+`npm run usbboot` downloads the gadget's files (`boot.img`, `bootfiles.bin`, `config.txt`) from
+raspberrypi/usbboot, at the commit 0.1.0 was made with, and checks each against its pinned SHA-256. Nothing
+is built. With `USBBOOT_DIR` set it takes them from a usbboot checkout on this computer instead.
 
 Release build: `npx tauri build` gives `target/release/fiber-setup` and, in `target/release/bundle/`, the
 AppImage and .deb on Linux, `FIBER Setup.app` and the .dmg on macOS (with `CI=true` the .dmg is made
@@ -55,7 +56,7 @@ On Windows (in PowerShell, as administrator for the app itself):
 
 ```powershell
 npm ci
-C:\cygwin64\bin\bash.exe --login -c "cd '$PWD' && scripts/fetch-usbboot.sh"   # rpiboot.exe, built in Cygwin
+npm run usbboot                            # the gadget's files and the USB driver's description
 scripts\driver-catalog.ps1                 # the USB driver's catalog (unsigned)
 npm run tauri dev
 npx tauri build --no-bundle                # target\release\fiber-setup.exe
@@ -65,9 +66,8 @@ scripts\windows-package.ps1 -Step installer   # target\windows-package\out\...-s
 scripts\windows-package.ps1 -Step zip
 ```
 
-Cygwin needs the packages `gcc-core`, `make`, `git`, `pkg-config` and `libusb1.0-devel`. A driver built by
-hand is not signed, so Windows does not take it; `scripts\windows-test.ps1` shows how CI gets around that
-on its own machine.
+A driver built by hand is not signed, so Windows does not take it; `scripts\windows-test.ps1` shows how CI
+gets around that on its own machine.
 
 Demo: `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) runs the app on the same simulated FIBER, all steps
 from download to "Set up another FIBER", without touching USB or the network. The title says "(demo)".
@@ -90,14 +90,9 @@ The steps are the same; these things under them differ.
 - **Finding the FIBER.** The boards come from Windows' list of USB devices, the disks and the USB device
   each hangs on from its storage management (PowerShell's `Get-Disk` and the device tree). A USB port is
   named after its place (`1400-2.1`: the controller, then the port on each hub).
-- **One at a time.** rpiboot names USB ports its own way on Windows, so it is not told which board to
-  take: with several boards in USB mode the app asks for one to be connected at a time. The disk it writes
-  is still only the one on the chosen port.
 - **Writing.** Windows writes into no volume it has mounted, so the eMMC's old partition table is removed
   first (`diskpart clean`), and its volumes with it. The disk is opened by its device path, which names its
   vendor and serial number, not by its number, and never if Windows boots from it.
-- **rpiboot** is built in Cygwin, the way Raspberry Pi builds it for Windows, and has Cygwin's two DLLs
-  next to it.
 
 The installer (`...-windows-x64-setup.exe`) puts the app into Program Files, installs Microsoft's WebView2
 where Windows does not have it yet, and installs the USB driver. The portable zip is the same app in a
@@ -109,8 +104,8 @@ folder: unpack it anywhere and start `fiber-setup.exe`. Both are signed by HARDW
 The steps are the same; three things under them differ.
 
 - **Finding the FIBER.** The boards and the disks behind them come from the I/O Registry (`ioreg`). The USB
-  port is named the way libusb names it there (bus, then the port on each hub: `1-1`, `2-1.3`), because that
-  is the name rpiboot's `-p` compares with.
+  port is named after its place (the bus, then the port on each hub: `1-1`, `2-1.3`), from the device's
+  location.
 - **Writing.** There is nothing to allow beforehand. When the write starts, macOS asks for the password
   (`authopen`) and hands the app the open eMMC, so nothing of the app runs as root. Before the dialog and
   again with the disk open, the app checks that the disk is a CM4's eMMC on USB; it opens no other disk.
@@ -118,8 +113,8 @@ The steps are the same; three things under them differ.
 - **Mounting.** macOS mounts every disk it sees. The FIBER's volumes are unmounted before the write, and the
   eMMC is ejected after it, so macOS does not write its own files to the new boot partition.
 
-The bundle carries its own rpiboot and libusb (`npm run usbboot` builds both), so the app needs nothing
-installed where it runs. A copy built by hand is not signed with a Developer ID and not notarized: it starts
+The app needs nothing installed where it runs, and the bundle holds one program, the app itself. A copy
+built by hand is not signed with a Developer ID and not notarized: it starts
 on the Mac that built it, and Gatekeeper stops it elsewhere. The released dmg is signed and notarized
 ([docs/release.md](docs/release.md)).
 
@@ -128,6 +123,7 @@ on the Mac that built it, and Gatekeeper stops it elsewhere. The released dmg is
 ```sh
 fiber-setup-cli devices                      # FIBERs on USB and the disks on this computer
 fiber-setup-cli image                        # download/check/unpack the image
+fiber-setup-cli boot                         # start a FIBER over USB: its eMMC shows as a disk, nothing is written
 FIBER_SETUP_PASSWORD=... FIBER_SETUP_WIFI_PASSWORD=... \
   fiber-setup-cli flash --hostname fiber --wifi-ssid MyWifi --country CZ --ssh-key ~/.ssh/id_ed25519.pub
 fiber-setup-cli flash ... --to-file out.img  # the same into a file, no FIBER needed
@@ -153,6 +149,8 @@ npm run build
 - A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
 - macOS and Windows: a first write to a real FIBER (see the status above). On Windows also the first
   install of the USB driver with a FIBER connected.
+- The app's own start over USB, which took the place of the bundled rpiboot after 1.1.0, has been run against
+  a simulated board only. `fiber-setup-cli boot` tries it on a real FIBER without writing anything.
 - Windows on ARM: the driver covers it, the app is built for Intel/AMD only (it runs there emulated).
 
 ## Pictures
@@ -168,5 +166,11 @@ in the steps were taken for this app.
 - [hardwario/fiber-platform](https://github.com/hardwario/fiber-platform): the FIBER platform setup by hand.
 - [hardwario/tower-bridge](https://github.com/hardwario/tower-bridge): the app this one's look and layout
   come from.
-- [raspberrypi/usbboot](https://github.com/raspberrypi/usbboot): rpiboot and the mass-storage gadget,
-  fetched by `npm run usbboot`.
+- [raspberrypi/usbboot](https://github.com/raspberrypi/usbboot): the mass-storage gadget's files, fetched
+  by `npm run usbboot`, and rpiboot, whose way of starting a board over USB the app follows.
+
+## Licence
+
+MIT, with one exception: `crates/fiber-setup-core/src/rpiboot.rs` is derived from Raspberry Pi's rpiboot
+and is, like it, under the Apache License 2.0 (`LICENSES/Apache-2.0.txt`). The gadget's files are Raspberry
+Pi's, under their own licences, which `npm run usbboot` puts into the bundle next to them.

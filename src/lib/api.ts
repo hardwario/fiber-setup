@@ -170,7 +170,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
       const [cb, done] = flashCbs ?? [() => {}, () => {}];
       const log = (line: string) => cb({ type: "log", line });
       cb({ type: "phase", phase: "boot" });
-      for (const line of ["Loading: mass-storage-gadget64/bootfiles.bin", "Sending bootcode.bin", "Second stage boot server done"]) {
+      for (const line of ["Waiting for the FIBER on USB port 3-2", "Sending bootcode4.bin", "File read: boot.img", "Second stage boot server done"]) {
         await new Promise((r) => setTimeout(r, 500));
         log(line);
       }

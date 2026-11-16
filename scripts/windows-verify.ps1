@@ -1,8 +1,8 @@
 # The checks of a release's Windows signing job (docs/release.md), in the work folder of
 # scripts/windows-package.ps1:
 #
-#   -Files a, b, ..  each is signed by HARDWARIO a.s., with a timestamp; the files of others
-#                    in the package are as they came (Cygwin's unsigned, Microsoft's signed)
+#   -Files a, b, ..  each is signed by HARDWARIO a.s., with a timestamp; the one file of
+#                    others in the package is as it came (Microsoft's, signed by Microsoft)
 #   -Driver          Windows takes the signed driver package into its driver store
 #   -Installer       the installer in out\ is signed the same way
 param(
@@ -24,7 +24,7 @@ function Assert-Ours([string]$file) {
 
 if ($Files) {
   foreach ($file in $Files) { Assert-Ours (Join-Path $Work $file) }
-  # Everything else that Windows can run must be one of the files of others we know.
+  # Everything else that Windows can run must be the file of others we know.
   $ours = $Files | ForEach-Object { (Join-Path $Work $_).ToLowerInvariant() }
   $others = Get-ChildItem $Work -Recurse -File -Include *.exe, *.dll, *.cat, *.sys |
     Where-Object { $ours -notcontains $_.FullName.ToLowerInvariant() }
@@ -32,7 +32,6 @@ if ($Files) {
     $sig = Get-AuthenticodeSignature $file.FullName
     "{0}: {1} {2}" -f $file.Name, $sig.Status, $sig.SignerCertificate.Subject
     switch -Wildcard ($file.Name) {
-      'cyg*.dll' { if ($sig.Status -ne 'NotSigned') { throw "$($file.Name) is Cygwin's and should be unsigned, as it came" } }
       'MicrosoftEdgeWebview2Setup.exe' {
         if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*O=Microsoft Corporation*') { throw "$($file.Name) is not Microsoft's" }
       }

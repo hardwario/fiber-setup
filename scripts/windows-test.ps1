@@ -1,6 +1,6 @@
 # What only a Windows machine can check, run by CI as administrator (as the app itself runs):
-# rpiboot starts with Cygwin's DLLs, Windows takes the USB driver, the installer installs and
-# the uninstaller removes. No FIBER is needed, and none is connected.
+# Windows takes the USB driver, the installer installs and the uninstaller removes. No FIBER is
+# needed, and none is connected.
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $root
@@ -13,11 +13,6 @@ function Wait-Exit([string]$file, [string[]]$arguments) {
   $p = if ($arguments) { Start-Process $file -ArgumentList $arguments -Wait -PassThru } else { Start-Process $file -Wait -PassThru }
   return $p.ExitCode
 }
-
-Step 'rpiboot.exe starts'
-$usage = & (Join-Path $usbboot 'rpiboot.exe') -h 2>&1 | Out-String
-if ($usage -notmatch 'Usage: rpiboot') { throw "rpiboot.exe -h said: $usage" }
-($usage -split "`n")[0]
 
 Step 'Windows takes the driver package'
 # A release signs the catalog as HARDWARIO a.s. Here a certificate made for this run, which
@@ -67,9 +62,12 @@ $setup = Join-Path $package 'out\fiber-setup-test-windows-x64-setup.exe'
 $code = Wait-Exit $setup @('/S')
 if ($code -ne 0) { throw "the installer ended with $code" }
 $installed = Join-Path $env:ProgramFiles 'FIBER Setup'
-foreach ($file in 'fiber-setup.exe', 'uninstall.exe', 'usbboot\rpiboot.exe', 'usbboot\cygwin1.dll', 'usbboot\mass-storage-gadget64\boot.img', 'usbboot\driver\fiber-usbboot.inf') {
+foreach ($file in 'fiber-setup.exe', 'uninstall.exe', 'usbboot\mass-storage-gadget64\boot.img', 'usbboot\mass-storage-gadget64\bootfiles.bin', 'usbboot\driver\fiber-usbboot.inf') {
   if (-not (Test-Path (Join-Path $installed $file))) { throw "$file was not installed" }
 }
+# The app starts a FIBER over USB by itself: no program of others, and no DLL, comes with it.
+$programs = @(Get-ChildItem $installed -Recurse -File -Include *.exe, *.dll | ForEach-Object { $_.Name } | Sort-Object)
+if (($programs -join ' ') -ne 'fiber-setup.exe uninstall.exe') { throw "the programs installed are: $programs" }
 $key = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FIBER Setup'
 $entry = Get-ItemProperty $key
 "Installed: $($entry.DisplayName) $($entry.DisplayVersion) by $($entry.Publisher), $($entry.EstimatedSize) KB"
@@ -94,7 +92,7 @@ foreach ($gone in (Join-Path $installed 'fiber-setup.exe'), (Join-Path $installe
 Step 'The zip holds the app'
 $unzipped = Join-Path $work 'unzipped'
 Expand-Archive (Join-Path $package 'out\fiber-setup-test-windows-x64-portable.zip') $unzipped
-foreach ($file in 'FIBER Setup\fiber-setup.exe', 'FIBER Setup\usbboot\rpiboot.exe', 'FIBER Setup\usbboot\driver\fiber-usbboot.cat') {
+foreach ($file in 'FIBER Setup\fiber-setup.exe', 'FIBER Setup\usbboot\mass-storage-gadget64\boot.img', 'FIBER Setup\usbboot\driver\fiber-usbboot.cat') {
   if (-not (Test-Path (Join-Path $unzipped $file))) { throw "$file is not in the zip" }
 }
 'All there.'

@@ -28,8 +28,7 @@ the signing; started on a release tag it signs too, but still publishes nothing.
 Each has a `<file>.sha256` next to it (`shasum -a 256 -c <file>.sha256`), made after signing and packing.
 The release holds these files and nothing else; the `publish` job fails otherwise.
 
-Not released yet: `fiber-setup-cli` (it needs rpiboot and the gadget beside it, which only the app
-bundles).
+Not released yet: `fiber-setup-cli` (it needs the gadget's files beside it, which only the app bundles).
 
 ## macOS signing and notarization
 
@@ -37,24 +36,21 @@ The `sign-macos` job signs with the team's Developer ID Application certificate 
 C32QFQ68V9) and notarizes with an App Store Connect API key. The app is one build for Apple silicon and
 Intel, from macOS 11 on. Order:
 
-1. `FIBER Setup.app/Contents/Resources/usbboot/libusb-1.0.0.dylib`, the library rpiboot loads;
-2. `FIBER Setup.app/Contents/Resources/usbboot/rpiboot`;
-3. `FIBER Setup.app` itself, whose signature seals the two. All three are signed with the hardened runtime
-   and a secure timestamp. The app is then notarized and the ticket stapled to it, so it also opens offline;
-4. the dmg built from it (the app and a link to Applications): signed, notarized and stapled.
+1. `FIBER Setup.app`, with the hardened runtime and a secure timestamp. It is then notarized and the ticket
+   stapled to it, so it also opens offline;
+2. the dmg built from it (the app and a link to Applications): signed, notarized and stapled.
 
-rpiboot and libusb are not ours (Raspberry Pi's usbboot and libusb.info, built from their pinned sources by
-`scripts/fetch-usbboot.sh`), but they must carry our signature all the same: Apple refuses an app with any
-program in it that is not signed with a Developer ID, and with the hardened runtime rpiboot loads only a
-library signed by the same team. The job first checks that the app holds exactly these three programs and
-stops if it finds another.
+The app holds one program, its own: it starts a FIBER over USB by itself, and the gadget it sends is data
+(Raspberry Pi's files, fetched by `scripts/fetch-usbboot.mjs`). Apple refuses an app with any program in it
+that is not signed with a Developer ID, so the job first checks that there is no other and stops if it finds
+one.
 
 A verification step fails the job unless Gatekeeper (`spctl`) accepts the app and the dmg, both tickets are
-stapled, each of the three programs is signed with Developer ID, a timestamp and the hardened runtime and is
-for both architectures, and the signed rpiboot still starts with the libusb next to it.
+stapled, and the app's program is signed with Developer ID, a timestamp and the hardened runtime and is for
+both architectures.
 
 The app needs no entitlements: it is not sandboxed, WebKit runs its JIT in Apple's own processes, and USB
-(rpiboot) and the tools the app starts (`ioreg`, `diskutil`, `authopen`) need none outside the sandbox.
+and the tools the app starts (`ioreg`, `diskutil`, `authopen`) need none outside the sandbox.
 
 The build job never sees the certificate: it makes an ad-hoc signed app, and only `sign-macos` imports the
 certificate, into a temporary keychain it deletes at the end.
@@ -90,27 +86,27 @@ Signing), account `hardwario`, certificate profile `hardwario` (Public Trust, "C
 
 1. `uninstall.exe` is made (unsigned) from `packaging/windows/installer.nsi`: the installer carries it, and
    cannot be changed once it is made, so it has to exist before the first signing.
-2. Signed together: `fiber-setup.exe`, `usbboot\rpiboot.exe` (built here from Raspberry Pi's source), the
-   USB driver's catalog `usbboot\driver\fiber-usbboot.cat`, and `uninstall.exe`.
+2. Signed together: `fiber-setup.exe`, the USB driver's catalog `usbboot\driver\fiber-usbboot.cat`, and
+   `uninstall.exe`.
 3. The installer is made from the signed files, and the portable zip of the same app.
 4. The installer is signed.
 
-Not signed, because they are other people's files and go out as they came: Cygwin's `cygwin1.dll` and
-`cygusb-1.0.dll` (unsigned) and Microsoft's `MicrosoftEdgeWebview2Setup.exe` inside the installer (signed by
-Microsoft, which the build job and this job both check).
+Not signed by us, because it is Microsoft's file and goes out as it came: `MicrosoftEdgeWebview2Setup.exe`
+inside the installer (signed by Microsoft, which the build job and this job both check). The package holds
+no other program: the gadget in `usbboot\mass-storage-gadget64` is data the app sends to the FIBER.
 
 Signatures use SHA-256 and an RFC 3161 timestamp from `http://timestamp.acs.microsoft.com`. Microsoft's
 certificates are valid for about three days, so only the timestamp keeps a signature valid after that.
 
 Verification steps fail the job unless each of our files has a valid signature by "HARDWARIO a.s." with a
-timestamp, the files of others are the ones named above and as described, and **Windows takes the signed
+timestamp, the only file of others is the one named above, and **Windows takes the signed
 driver package**: its signer is put among the machine's trusted publishers (what "Always trust software from
 HARDWARIO a.s." does on a user's computer) and the package is added to the driver store with `pnputil`. A
 signature check alone would not show that; a driver package is judged by stricter rules than a program.
 
-CI (`scripts/windows-test.ps1`, every push) checks the rest on a Windows machine without a FIBER: rpiboot.exe
-starts, Windows takes the driver package when a certificate made for the run signs it, the app installs it
-by itself, and the installer installs and uninstalls.
+CI (`scripts/windows-test.ps1`, every push) checks the rest on a Windows machine without a FIBER: Windows
+takes the driver package when a certificate made for the run signs it, the app installs it by itself, the
+installer installs (the app, the uninstaller and no other program) and uninstalls.
 
 A new certificate has no reputation with SmartScreen: early downloads may still show "More info, Run anyway".
 That is not a signing failure.

@@ -12,7 +12,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "tauri": "tauri",
-    "usbboot": "bash scripts/fetch-usbboot.sh"
+    "usbboot": "node scripts/fetch-usbboot.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

@@ -1,6 +1,6 @@
-//! The whole write: rpiboot on the FIBER's port, its eMMC found on that same port, settings into
-//! the boot partition (named after the CM4's serial number with the FIBER software), write, read
-//! back.
+//! The whole write: the FIBER started over USB on its port, its eMMC found on that same port,
+//! settings into the boot partition (named after the CM4's serial number with the FIBER
+//! software), write, read back.
 
 use crate::disk::{self, BlockDevice, Source, Target};
 use crate::event::{Cancel, Event, Phase, Sink};
@@ -14,9 +14,9 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::{Duration, Instant};
 
-/// How long the gadget may take to show its eMMC after rpiboot handed over (seen: about 10 s).
+/// How long the gadget may take to show its eMMC once it has its files (seen: about 10 s).
 const DISK_TIMEOUT: Duration = Duration::from_secs(90);
-/// rpiboot needs a few seconds for a board that waits in its boot ROM; this long means none answers.
+/// Starting a board that waits in its boot ROM takes a few seconds; this long means none answers.
 const RPIBOOT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,29 +84,22 @@ fn find_emmc(port: &str, image_size: u64) -> Result<Emmc> {
     Ok(Emmc::Ready(d))
 }
 
-/// Flashes the FIBER whose boot ROM waits on USB port `port`.
-pub fn run(
+/// Starts the FIBER whose boot ROM waits on USB port `port` into the gadget (unless its eMMC is
+/// there already) and waits for the eMMC to show as a disk of at least `min_size` bytes.
+/// Nothing is written.
+pub fn start_gadget(
     tools: &Tools,
-    image: &Prepared,
-    settings: &Settings,
     port: &str,
+    min_size: u64,
     events: Sink<'_>,
     cancel: &Cancel,
-) -> Result<Report> {
-    let started = Instant::now();
-    settings.validate()?;
-
+) -> Result<BlockDevice> {
     events(Event::Phase { phase: Phase::Boot });
-    if !matches!(find_emmc(port, image.size)?, Emmc::Ready(_)) {
-        // rpiboot cannot be told which board to take on Windows (rpiboot.rs).
-        #[cfg(windows)]
-        if crate::usb::boards().iter().filter(|b| b.kind == crate::usb::BoardKind::Boot).count() > 1 {
-            bail!("several boards are in USB mode; on Windows connect one FIBER at a time");
-        }
+    if !matches!(find_emmc(port, min_size)?, Emmc::Ready(_)) {
         let log = |line: String| events(Event::Log { line });
         rpiboot::run(tools, port, RPIBOOT_TIMEOUT, &log, cancel)?;
     } else {
-        events(Event::Log { line: "The FIBER's eMMC is already connected; rpiboot not needed".into() });
+        events(Event::Log { line: "The FIBER's eMMC is already connected; it need not be started over USB".into() });
     }
 
     events(Event::Phase { phase: Phase::WaitDisk });
@@ -114,14 +107,14 @@ pub fn run(
     let mut too_small: Option<BlockDevice> = None;
     let emmc = loop {
         cancel.check()?;
-        match find_emmc(port, image.size)? {
+        match find_emmc(port, min_size)? {
             Emmc::Ready(d) => break d,
             Emmc::TooSmall(d) => too_small = Some(d),
             Emmc::NotYet => {}
         }
         if Instant::now() > deadline {
             if let Some(d) = too_small {
-                bail!("the FIBER's eMMC ({} MB) is smaller than the image ({} MB)", d.size >> 20, image.size >> 20);
+                bail!("the FIBER's eMMC ({} MB) is smaller than the image ({} MB)", d.size >> 20, min_size >> 20);
             }
             bail!("the FIBER's eMMC did not appear on USB port {port} (check the cable, then try again)");
         }
@@ -135,6 +128,21 @@ pub fn run(
             emmc.usb_serial.as_deref().map(|s| format!(", CM4 serial {s}")).unwrap_or_default()
         ),
     });
+    Ok(emmc)
+}
+
+/// Flashes the FIBER whose boot ROM waits on USB port `port`.
+pub fn run(
+    tools: &Tools,
+    image: &Prepared,
+    settings: &Settings,
+    port: &str,
+    events: Sink<'_>,
+    cancel: &Cancel,
+) -> Result<Report> {
+    let started = Instant::now();
+    settings.validate()?;
+    let emmc = start_gadget(tools, port, image.size, events, cancel)?;
     disk::free_for_writing(&emmc)?;
 
     // The settings go in only now: the serial number names the FIBER.

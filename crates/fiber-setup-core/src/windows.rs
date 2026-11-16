@@ -2,8 +2,8 @@
 //!
 //! The boards on USB come from Windows' device list (the `nusb` crate), the disks and the USB
 //! device each one hangs on from its storage management (PowerShell). The boot ROM needs a
-//! driver before rpiboot can talk to it: a WinUSB driver package of ours (`driver/`, next to
-//! rpiboot), installed with `pnputil`. Writing a disk needs administrator rights, which the app
+//! driver before the app can talk to it: a WinUSB driver package of ours (`driver/`, next to
+//! the gadget's folder), installed with `pnputil`. Writing a disk needs administrator rights, which the app
 //! asks for when it starts.
 //!
 //! The tools of Windows are started by their full paths under `%SystemRoot%\System32`: this
@@ -255,7 +255,7 @@ pub fn boards() -> Vec<UsbBoard> {
             } else {
                 return None;
             };
-            let port = d.location_paths().iter().find_map(|p| port_name(&p.to_string_lossy()))?;
+            let port = crate::usb::port_of(&d)?;
             Some(UsbBoard { port, kind, product_id, serial: d.serial_number().map(str::to_ascii_lowercase) })
         })
         .collect();

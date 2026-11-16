@@ -53,7 +53,7 @@ switch ($Step) {
   'stage' {
     if (-not $Exe) { throw '-Exe: the built fiber-setup.exe' }
     $usbboot = Join-Path $root 'src-tauri\resources\usbboot'
-    foreach ($needed in 'rpiboot.exe', 'mass-storage-gadget64\boot.img', 'driver\fiber-usbboot.inf', 'driver\fiber-usbboot.cat') {
+    foreach ($needed in 'mass-storage-gadget64\boot.img', 'mass-storage-gadget64\bootfiles.bin', 'driver\fiber-usbboot.inf', 'driver\fiber-usbboot.cat') {
       if (-not (Test-Path (Join-Path $usbboot $needed))) { throw "$needed is missing from $usbboot" }
     }
     Remove-Item $app -Recurse -Force -ErrorAction SilentlyContinue

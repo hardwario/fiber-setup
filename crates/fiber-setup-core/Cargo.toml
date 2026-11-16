@@ -1,9 +1,10 @@
 [package]
 name = "fiber-setup-core"
-description = "Flashes a HARDWARIO FIBER (CM4) over its USB-B port: image, rpiboot, eMMC write, first-boot settings"
+description = "Flashes a HARDWARIO FIBER (CM4) over its USB-B port: image, USB boot, eMMC write, first-boot settings"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+# MIT, but for src/rpiboot.rs, which follows Raspberry Pi's rpiboot and is under its license.
+license = "MIT AND Apache-2.0"
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
@@ -16,15 +17,13 @@ fatfs = "0.3"
 getrandom = "0.3"
 hex = "0.4"
 liblzma = { version = "0.4", features = ["static"] }
+nusb = "0.2"
 sha-crypt = "0.5"
 sha2 = "0.10"
 ureq = "3.5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-[target.'cfg(windows)'.dependencies]
-nusb = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = { version = "1", default-features = false }

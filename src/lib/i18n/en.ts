@@ -178,7 +178,7 @@ export const en = {
     driverButton: "Install the USB driver",
     driverDone: "USB driver installed.",
     driverFailed: "The USB driver was not installed: {error}",
-    toolsMissing: "rpiboot is missing from this installation, so the FIBER cannot be started in USB mode.",
+    toolsMissing: "This installation is not complete: the files that start a FIBER over USB are missing. Install FIBER Setup again.",
   },
   write: {
     title: "Write the FIBER",
