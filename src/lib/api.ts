@@ -150,7 +150,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
   const searches = new Map<string, number>();
   let cancelled = false;
   const appInfo = async (): Promise<AppInfo> => ({
-    version: "1.1.0",
+    version: "1.2.0",
     os: "linux",
     image,
     tools_found: true,

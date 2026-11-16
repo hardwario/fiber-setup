@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "fiber-setup"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "fiber-setup-core",
@@ -944,7 +944,7 @@ dependencies = [
 
 [[package]]
 name = "fiber-setup-cli"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -955,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "fiber-setup-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "fatfs",

@@ -17,9 +17,9 @@ $Work = (Resolve-Path $Work).Path
 function Assert-Ours([string]$file) {
   $sig = Get-AuthenticodeSignature $file
   "{0}: {1}, signed by {2}, timestamped by {3}" -f (Split-Path $file -Leaf), $sig.Status, $sig.SignerCertificate.Subject, $sig.TimeStamperCertificate.Subject
-  if ($sig.Status -ne 'Valid') { throw "$file: signature $($sig.Status): $($sig.StatusMessage)" }
-  if ($sig.SignerCertificate.Subject -notlike '*HARDWARIO a.s.*') { throw "$file: signed by $($sig.SignerCertificate.Subject)" }
-  if (-not $sig.TimeStamperCertificate) { throw "$file: no timestamp" }
+  if ($sig.Status -ne 'Valid') { throw "${file}: signature $($sig.Status): $($sig.StatusMessage)" }
+  if ($sig.SignerCertificate.Subject -notlike '*HARDWARIO a.s.*') { throw "${file}: signed by $($sig.SignerCertificate.Subject)" }
+  if (-not $sig.TimeStamperCertificate) { throw "${file}: no timestamp" }
 }
 
 if ($Files) {

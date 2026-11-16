@@ -8,9 +8,9 @@ installs the FIBER software by itself and restarts once.
 Built with Tauri 2, Rust and Svelte 5: `crates/fiber-setup-core` (no Tauri), `crates/fiber-setup-cli`,
 `src-tauri`, `src`. The app speaks English, Czech, German, Slovak and Polish.
 
-**Status: 1.1.0 (2026-11-15); `main` is ahead of it.** Linux, macOS and Windows. On macOS the app has
-started a real FIBER over USB, written it and read it back (2026-11-16, one FIBER). Not tried on real
-FIBERs yet: several at once, the start-again after RESET, and the Linux and Windows sides.
+**Status: 1.2.0 (2026-11-16).** Linux, macOS and Windows. On macOS the app has started a real FIBER over
+USB, written it and read it back (one FIBER). Not tried on real FIBERs yet: several at once, the
+start-again after RESET, and the Linux and Windows sides.
 
 ## How it works
 
@@ -190,7 +190,7 @@ npm run build
 - A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
 - Linux and Windows: a first write to a real FIBER (see the status above). On Windows also the first
   install of the USB driver with a FIBER connected.
-- The app's own start over USB, which took the place of the bundled rpiboot after 1.1.0, has started a real
+- The app's own start over USB, which took the place of the bundled rpiboot in 1.2.0, has started a real
   FIBER on macOS only; elsewhere, and where it starts a board again after RESET, it has been run against a
   simulated board. `fiber-setup-cli boot` tries it on a real FIBER without writing anything.
 - Several FIBERs at once have been run against simulated boards only: whether macOS asks for the password
