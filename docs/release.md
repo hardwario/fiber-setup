@@ -12,7 +12,11 @@
    files and their `.sha256` checksums. The two signing jobs wait for an approval: open the run and choose
    **Review deployments**, **signing**, **Approve and deploy** (GitHub also sends a notification). Approve
    only a run of a tag you pushed yourself.
-4. Check the draft on GitHub and publish it.
+4. Check the draft on GitHub and publish it. Publishing tells the users: from the version after 1.1.0 on,
+   FIBER Setup asks GitHub for the newest published release when it starts and offers a newer one (a banner
+   on its Welcome page with Download, which opens the release's page). Drafts and pre-releases are never
+   offered: keep a release that must not reach users a draft or mark it as a pre-release, and leave "Set as
+   the latest release" checked otherwise.
 
 A dry run builds everything without publishing: Actions, Release, Run workflow. Started on a branch it skips
 the signing; started on a release tag it signs too, but still publishes nothing.

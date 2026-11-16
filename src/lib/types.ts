@@ -90,3 +90,11 @@ export interface Found {
   ip: string;
   ssh: boolean;
 }
+
+/** A version of FIBER Setup newer than the running one. */
+export interface Release {
+  /** "1.2.0" */
+  version: string;
+  /** Its page on GitHub, with the downloads. */
+  url: string;
+}

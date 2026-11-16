@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+mod update;
+
 #[derive(Default)]
 struct AppState {
     cancel: Cancel,
@@ -305,6 +307,19 @@ fn opener() -> PathBuf {
     }
 }
 
+fn open_in_browser(url: &str) -> Result<(), String> {
+    let mut command = std::process::Command::new(opener());
+    // No console window flashing up on Windows.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+    let mut child = command.arg(url).spawn().map_err(|e| e.to_string())?;
+    // Reaped on a thread, so no zombie is left behind.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 /// Opens a web page in the browser; only https links, only ours.
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
@@ -312,16 +327,21 @@ fn open_link(url: String) -> Result<(), String> {
     if !allowed.iter().any(|p| url.starts_with(p)) {
         return Err("link not allowed".into());
     }
-    let mut command = std::process::Command::new(opener());
-    // No console window flashing up on Windows.
-    #[cfg(windows)]
-    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
-    let mut child = command.arg(&url).spawn().map_err(|e| e.to_string())?;
-    // Reaped on a thread, so no zombie is left behind.
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
+    open_in_browser(&url)
+}
+
+/// The newer version of FIBER Setup, if a check found one (also sent as `update-available`).
+#[tauri::command]
+fn update_available(updates: State<'_, update::Updates>) -> Option<fiber_setup_core::update::Release> {
+    updates.available()
+}
+
+/// Opens the newer version's release page in the browser. The page is the one the check built
+/// from the version it found: the window cannot name another.
+#[tauri::command]
+fn open_release(updates: State<'_, update::Updates>) -> Result<(), String> {
+    let release = updates.available().ok_or("no newer version known")?;
+    open_in_browser(&release.url)
 }
 
 /// `fiber-setup --demo` (or FIBER_SETUP_DEMO=1): the window runs on the simulated FIBER, to show
@@ -360,11 +380,13 @@ pub fn run() {
     let result = tauri::Builder::default()
         .setup(|app| {
             size_window(app);
+            update::start(app.handle(), app.state::<update::Updates>().inner().clone(), demo());
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState::default())
+        .manage(update::Updates::default())
         .invoke_handler(tauri::generate_handler![
             app_info,
             image_status,
@@ -377,6 +399,8 @@ pub fn run() {
             cancel,
             find_device,
             open_link,
+            update_available,
+            open_release,
             demo_mode
         ])
         .run(tauri::generate_context!());

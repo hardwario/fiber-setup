@@ -22,6 +22,7 @@ pub mod mbr;
 pub mod rpiboot;
 #[cfg(test)]
 mod testimg;
+pub mod update;
 pub mod usb;
 #[cfg(windows)]
 pub mod windows;

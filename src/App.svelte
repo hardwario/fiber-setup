@@ -165,6 +165,13 @@
         <div class="sim"><Icon name="info" size={12} /> {t().nav.simulated}</div>
       {/if}
       <div class="about">
+        {#if wizard.update}
+          <!-- On every step, also once the notice on the Welcome page is closed. -->
+          <button class="newer" type="button" onclick={() => wizard.openRelease()}>
+            <Icon name="download" size={12} />
+            {fill(t().update.short, { version: wizard.update.version })}
+          </button>
+        {/if}
         <div class="links">
           <a
             href="https://docs.hardwario.com/fiber/"
@@ -434,10 +441,29 @@
     border-top: 1px solid var(--border);
     font-size: 12px;
   }
+  .newer {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 5px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .newer:hover {
+    text-decoration: underline;
+  }
+  /* The two links on one line, so the line above them costs the bar no height. */
   .links {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
+    gap: 4px 8px;
+    font-size: 11px;
   }
   .links a {
     display: inline-flex;

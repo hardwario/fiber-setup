@@ -966,6 +966,7 @@ dependencies = [
  "nusb",
  "plist",
  "rustix",
+ "semver",
  "serde",
  "serde_json",
  "sha-crypt",

@@ -26,6 +26,12 @@ export const cs: Messages = {
     },
     phaseCount: "{done} z {total}",
   },
+  update: {
+    title: "Dostupná aktualizace: {version}",
+    short: "Nová verze {version}",
+    body: "Nová verze FIBER Setup je připravena ke stažení.",
+    download: "Stáhnout",
+  },
   common: {
     next: "Další",
     back: "Zpět",

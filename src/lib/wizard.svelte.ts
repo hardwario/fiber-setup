@@ -3,7 +3,18 @@ import { apiReady, type Api } from "./api";
 import { COUNTRY_CODES } from "./countries";
 import { t } from "./i18n/index.svelte";
 import { prefs } from "./prefs.svelte";
-import type { AccessStatus, AppInfo, FlashReport, Found, JobEvent, Phase, Prepared, Settings, UsbBoard } from "./types";
+import type {
+  AccessStatus,
+  AppInfo,
+  FlashReport,
+  Found,
+  JobEvent,
+  Phase,
+  Prepared,
+  Release,
+  Settings,
+  UsbBoard,
+} from "./types";
 
 export const STEPS = ["welcome", "image", "settings", "jumper", "connect", "write", "restart", "start", "done"] as const;
 export type StepId = (typeof STEPS)[number];
@@ -63,6 +74,16 @@ const SYSTEM_USERS = ["root", "daemon", "bin", "sys", "sync", "games", "man", "l
   "www-data", "backup", "list", "irc", "nobody", "messagebus", "sshd", "avahi", "polkitd", "systemd-network"];
 const TIMEZONE = /^[A-Za-z0-9/_+-]+$/;
 const utf8 = (s: string) => new TextEncoder().encode(s).length;
+/** The newer version whose notice the user closed; the one after it shows again. */
+const DISMISSED_KEY = "fiber-setup.update.dismissed";
+
+function readDismissed(): string | null {
+  try {
+    return localStorage.getItem(DISMISSED_KEY);
+  } catch {
+    return null;
+  }
+}
 
 class Wizard {
   api: Api | null = null;
@@ -102,6 +123,9 @@ class Wizard {
   written = $state.raw<{ hostname: string; username: string; network: Network; ssid: string; installFiber: boolean } | null>(null);
   found = $state.raw<(Found & { name: string }) | null>(null);
   searchSince = $state(0);
+  /** A newer version of FIBER Setup, when there is one. */
+  update = $state.raw<Release | null>(null);
+  private dismissed = $state(readDismissed());
 
   get index(): number {
     return STEPS.indexOf(this.step);
@@ -139,6 +163,9 @@ class Wizard {
           if (d.result && this.written) this.written = { ...this.written, hostname: d.result.hostname };
         },
       );
+      await this.api.onUpdate((release) => (this.update = release));
+      // What a check found before the window was listening.
+      this.update = (await this.api.updateAvailable()) ?? this.update;
       const s = await this.api.imageStatus();
       this.image.otherCopy = s.status.other_copy;
       if (s.prepared) this.image.result = s.prepared;
@@ -286,6 +313,25 @@ class Wizard {
 
   cancel() {
     this.api?.cancel();
+  }
+
+  /** The newer version to tell about on the Welcome page: not one whose notice was closed. */
+  get updateNotice(): Release | null {
+    return this.update && this.update.version !== this.dismissed ? this.update : null;
+  }
+
+  dismissUpdate() {
+    if (!this.update) return;
+    this.dismissed = this.update.version;
+    try {
+      localStorage.setItem(DISMISSED_KEY, this.update.version);
+    } catch {
+      // Closed for this session only.
+    }
+  }
+
+  openRelease() {
+    this.api?.openRelease().catch(() => {});
   }
 
   /** Puts a text (the login command) on the clipboard. */

@@ -13,6 +13,7 @@ import type {
   JobEvent,
   Phase,
   Prepared,
+  Release,
   Settings,
   UsbBoard,
 } from "./types";
@@ -35,6 +36,12 @@ export interface Api {
   copyText(text: string): Promise<void>;
   onImage(cb: (e: JobEvent) => void, done: (d: Done<Prepared>) => void): Promise<Unlisten>;
   onFlash(cb: (e: JobEvent) => void, done: (d: Done<FlashReport>) => void): Promise<Unlisten>;
+  /** The newer version of FIBER Setup that a check found so far, if any. */
+  updateAvailable(): Promise<Release | null>;
+  /** Each time a check (after the start, then daily) has its answer. */
+  onUpdate(cb: (release: Release | null) => void): Promise<Unlisten>;
+  /** Opens the newer version's release page in the browser. */
+  openRelease(): Promise<void>;
   /** Simulated FIBER only: the next FIBER ("Set up another FIBER"). */
   nextBoard?(): void;
 }
@@ -72,12 +79,16 @@ async function tauriApi(): Promise<Api> {
     },
     onImage: (cb, done) => pair<Prepared>("image", cb, done),
     onFlash: (cb, done) => pair<FlashReport>("flash", cb, done),
+    updateAvailable: () => invoke("update_available"),
+    onUpdate: (cb) => listen<Release | null>("update-available", (e) => cb(e.payload)),
+    openRelease: () => invoke("open_release"),
   };
 }
 
 /** A FIBER that appears on USB a few seconds after the Connect step opens, stays in USB mode for a
  * few seconds after writing (until "RESET") and is found on the network on the third look.
- * `openLink` and `copyText` are the app's own in demo mode (the browser's in a plain browser). */
+ * `openLink` and `copyText` are the app's own in demo mode (the browser's in a plain browser).
+ * With `?update=available` in the address, a newer version of FIBER Setup is out. */
 function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (text: string) => Promise<void>): Api {
   const image = {
     id: "raspios-lite-arm64-2026-10-06",
@@ -103,6 +114,28 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
   let afterWrite: number | null = null;
   let searches = 0;
   let cancelled = false;
+  const appInfo = async (): Promise<AppInfo> => ({
+    version: "1.1.0",
+    os: "linux",
+    image,
+    tools_found: true,
+    defaults: {
+      hostname: "fiber",
+      username: "fiber",
+      country: "CZ",
+      timezone: "Europe/Prague",
+      ssh_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey user@laptop",
+      ssh_key_path: "~/.ssh/id_ed25519.pub",
+      language: navigator.language.startsWith("cs") ? "cs" : "en",
+    },
+  });
+  /** `?update=available`: the version after this one is out. */
+  const update = async (): Promise<Release | null> => {
+    if (new URLSearchParams(location.search).get("update") !== "available") return null;
+    const [major, minor] = (await appInfo()).version.split(".").map(Number);
+    const version = `${major}.${minor + 1}.0`;
+    return { version, url: `https://github.com/hardwario/fiber-setup/releases/tag/v${version}` };
+  };
 
   const run = async (
     cb: (e: JobEvent) => void,
@@ -121,21 +154,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
 
   return {
     simulated: true,
-    appInfo: async () => ({
-      version: "1.1.0",
-      os: "linux",
-      image,
-      tools_found: true,
-      defaults: {
-        hostname: "fiber",
-        username: "fiber",
-        country: "CZ",
-        timezone: "Europe/Prague",
-        ssh_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey user@laptop",
-        ssh_key_path: "~/.ssh/id_ed25519.pub",
-        language: navigator.language.startsWith("cs") ? "cs" : "en",
-      },
-    }),
+    appInfo,
     imageStatus: async () => ({ status: { image, ready: false, other_copy: null }, prepared: null }),
     imagePrepare: async () => {
       cancelled = false;
@@ -223,6 +242,12 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
     onFlash: async (cb, done) => {
       flashCbs = [cb, done];
       return () => (flashCbs = null);
+    },
+    updateAvailable: update,
+    onUpdate: async () => () => {},
+    openRelease: async () => {
+      const release = await update();
+      if (release) window.open(release.url, "_blank");
     },
     nextBoard: () => {
       boardsAsked = 0;

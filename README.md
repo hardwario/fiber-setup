@@ -72,6 +72,21 @@ gets around that on its own machine.
 Demo: `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) runs the app on the same simulated FIBER, all steps
 from download to "Set up another FIBER", without touching USB or the network. The title says "(demo)".
 
+## Updates
+
+When it starts, and once a day for as long as it stays open, the app asks GitHub for the newest release (and
+sends nothing else). When a newer one is out, the Welcome page says so, with a Download button that opens
+the release's page, and a line under the step list keeps saying so on every step. The app does not update
+itself: download the new version and install it in place of the old one. Drafts and pre-releases are never
+offered. The same as in TOWER Bridge, without its tray item and notification.
+
+| Setting | What it does |
+|---|---|
+| `FIBER_SETUP_UPDATE_CHECK=0` | The app does not ask (the demo never does) |
+| `FIBER_SETUP_UPDATE_URL=http://…` | Ask this address instead of GitHub (a JSON file with `tag_name`), to try the notice |
+
+In the browser preview, `http://localhost:1430/?update=available` shows the notice.
+
 The first time on Linux, the app asks to **allow USB access**: two udev rules (the Fiber Provisioning
 Station's, with the partition lines fixed so the desktop does not mount the FIBER's partitions) that let the
 desktop user talk to the CM4 boot ROM and write the CM4 eMMC, and nothing else. They

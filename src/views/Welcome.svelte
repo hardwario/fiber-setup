@@ -1,11 +1,14 @@
 <script lang="ts">
   import fiber from "../assets/photos/fiber-product.png";
   import Icon from "../lib/components/Icon.svelte";
+  import UpdateNotice from "../lib/components/UpdateNotice.svelte";
   import { t } from "../lib/i18n/index.svelte";
 
   // One glyph for each thing on the "What you need" list, in its order.
   const NEEDS = ["plug", "usb", "wrench", "wifi"];
 </script>
+
+<UpdateNotice />
 
 <img class="product" src={fiber} alt="HARDWARIO FIBER" />
 

@@ -24,6 +24,12 @@ export const en = {
     },
     phaseCount: "{done} of {total}",
   },
+  update: {
+    title: "Update available: {version}",
+    short: "New version {version}",
+    body: "A new version of FIBER Setup is ready to download.",
+    download: "Download",
+  },
   common: {
     next: "Next",
     back: "Back",
