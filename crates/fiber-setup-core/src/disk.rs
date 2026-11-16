@@ -625,6 +625,116 @@ mod tests {
         assert_eq!(std::fs::read(&raw).unwrap(), vec![1u8; 8192]);
     }
 
+    /// The image with the patch laid over it, as the write must produce it.
+    fn patched(data: &[u8], offset: usize, patch: &[u8]) -> Vec<u8> {
+        let mut out = data.to_vec();
+        out[offset..offset + patch.len()].copy_from_slice(patch);
+        out
+    }
+
+    #[test]
+    fn the_patch_lands_wherever_a_read_meets_it() {
+        let t = tempfile::tempdir().unwrap();
+        let raw = t.path().join("img.raw");
+        let data: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&raw, &data).unwrap();
+        let mut file = File::open(&raw).unwrap();
+        // Where the patch lies: at the start, in the middle, up to the last byte, nowhere.
+        for (patch_offset, patch_len) in [(0, 1000), (40_000, 20_000), (99_000, 1000), (50_000, 0)] {
+            let patch = vec![0xEEu8; patch_len];
+            let src = Source { raw: &raw, size: data.len() as u64, patch_offset: patch_offset as u64, patch: &patch };
+            let expected = patched(&data, patch_offset, &patch);
+            // Reads before it, after it, inside it, around it, and across each of its ends.
+            for (offset, len) in [
+                (0, 100_000),
+                (0, 500),
+                (500, 1000),
+                (30_000, 5000),
+                (39_999, 2),
+                (45_000, 1000),
+                (59_999, 2),
+                (60_000, 40_000),
+                (98_999, 1001),
+                (99_999, 1),
+            ] {
+                let mut buf = vec![0u8; len];
+                src.read_at(&mut file, offset as u64, &mut buf).unwrap();
+                assert!(
+                    buf == expected[offset..offset + len],
+                    "patch {patch_len} at {patch_offset}, read {len} at {offset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn writes_images_of_any_length() {
+        let t = tempfile::tempdir().unwrap();
+        let raw = t.path().join("img.raw");
+        let noop = |_e: Event| {};
+        // Less than a chunk, exactly one, one and a sector, exactly two.
+        for size in [512, 4096 * 3, CHUNK, CHUNK + 512, CHUNK * 2] {
+            let data: Vec<u8> = (0..size).map(|i| (i % 249) as u8).collect();
+            std::fs::write(&raw, &data).unwrap();
+            let patch = vec![0x11u8; 300];
+            let src = Source { raw: &raw, size: size as u64, patch_offset: (size - 400) as u64, patch: &patch };
+            let target = Target::File(t.path().join("out.img"));
+            // Over a longer file from an earlier write, which must not show through.
+            std::fs::write(target.path(), vec![0x77u8; CHUNK * 3]).unwrap();
+            write_and_verify(&src, &target, &noop, &Cancel::new()).unwrap();
+            assert!(std::fs::read(target.path()).unwrap() == patched(&data, size - 400, &patch), "{size} bytes");
+        }
+    }
+
+    #[test]
+    fn verify_tells_where_the_target_ends_or_differs() {
+        let t = tempfile::tempdir().unwrap();
+        let raw = t.path().join("img.raw");
+        let size = CHUNK + 8192;
+        let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&raw, &data).unwrap();
+        let src = Source { raw: &raw, size: size as u64, patch_offset: 0, patch: &[] };
+        let target = Target::File(t.path().join("out.img"));
+        let noop = |_e: Event| {};
+
+        std::fs::write(target.path(), &data[..CHUNK + 4096]).unwrap();
+        let error = verify(&src, &target, &noop, &Cancel::new()).unwrap_err().to_string();
+        assert!(error.contains(&format!("ended at {} bytes", CHUNK + 4096)), "{error}");
+
+        // The last byte of all.
+        let mut bad = data.clone();
+        bad[size - 1] ^= 0x80;
+        std::fs::write(target.path(), &bad).unwrap();
+        let error = verify(&src, &target, &noop, &Cancel::new()).unwrap_err().to_string();
+        assert!(error.contains(&format!("at byte {}", size - 1)), "{error}");
+
+        // A longer target is fine: an eMMC is larger than the image.
+        let mut longer = data.clone();
+        longer.extend_from_slice(&[0xFF; 4096]);
+        std::fs::write(target.path(), &longer).unwrap();
+        verify(&src, &target, &noop, &Cancel::new()).unwrap();
+
+        std::fs::remove_file(target.path()).unwrap();
+        assert!(verify(&src, &target, &noop, &Cancel::new()).is_err());
+    }
+
+    /// A link is refused as a target, wherever it points: the file it names could be a disk.
+    #[cfg(unix)]
+    #[test]
+    fn file_target_is_not_followed_through_a_link() {
+        let t = tempfile::tempdir().unwrap();
+        let raw = t.path().join("img.raw");
+        std::fs::write(&raw, vec![1u8; 8192]).unwrap();
+        let other = t.path().join("other.bin");
+        std::fs::write(&other, b"keep").unwrap();
+        let link = t.path().join("out.img");
+        std::os::unix::fs::symlink(&other, &link).unwrap();
+        let src = Source { raw: &raw, size: 8192, patch_offset: 0, patch: &[] };
+        let error = write(&src, &Target::File(link), &|_| {}, &Cancel::new()).unwrap_err().to_string();
+        assert!(error.contains("not a regular file"), "{error}");
+        assert_eq!(std::fs::read(&other).unwrap(), b"keep");
+    }
+
     #[test]
     fn device_numbers() {
         // As glibc's makedev encodes them: sdb 8:16, nvme0n1 259:0, and a minor above 255.

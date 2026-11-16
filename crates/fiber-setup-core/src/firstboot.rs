@@ -132,9 +132,22 @@ impl Settings {
 }
 
 /// A YAML double-quoted string. JSON escaping is valid YAML, and it keeps quotes, backslashes and
-/// non-ASCII characters in passwords and Wi-Fi names intact.
+/// non-ASCII characters in passwords and Wi-Fi names intact. A few characters that JSON leaves as
+/// they are need escaping too: the YAML parsers on the FIBER (PyYAML in cloud-init, libyaml in
+/// netplan) refuse DEL, the C1 controls, U+FFFE and U+FFFF, and take U+0085, U+2028 and U+2029
+/// for the end of a line.
 fn q(s: &str) -> String {
-    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+    let json = serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        match c {
+            '\u{7f}'..='\u{9f}' | '\u{2028}' | '\u{2029}' | '\u{feff}' | '\u{fffe}' | '\u{ffff}' => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 pub fn new_instance_id() -> String {
@@ -343,6 +356,29 @@ mod tests {
         assert!(f.network_config.contains("regulatory-domain: \"CZ\""));
         assert_eq!(f.meta_data, "instance-id: fiber-setup-1-abcd\n");
         assert_eq!(f.cmdline, "ds=nocloud;i=fiber-setup-1-abcd cfg80211.ieee80211_regdom=CZ");
+    }
+
+    /// What the YAML parsers on the FIBER would refuse or change is written as an escape; the
+    /// rest stays readable. (Checked with PyYAML 6 and libyaml 0.2.1, 2026-11-15: each of these
+    /// strings comes back as it went in, as a value and as a key.)
+    #[test]
+    fn quotes_every_character_for_yaml() {
+        assert_eq!(q("Dílna 📶"), "\"Dílna 📶\"");
+        assert_eq!(q("a\"b\\c"), r#""a\"b\\c""#);
+        assert_eq!(q("tab\there\nline"), r#""tab\there\nline""#);
+        assert_eq!(q("bell\u{7}"), r#""bell\u0007""#);
+        assert_eq!(q("del\u{7f}"), r#""del\u007f""#);
+        assert_eq!(q("nel\u{85}c1\u{9f}"), r#""nel\u0085c1\u009f""#);
+        assert_eq!(q("ls\u{2028}ps\u{2029}"), r#""ls\u2028ps\u2029""#);
+        assert_eq!(q("bom\u{feff}"), r#""bom\ufeff""#);
+        assert_eq!(q("\u{fffe}\u{ffff}"), r#""\ufffe\uffff""#);
+        assert_eq!(q("nbsp\u{a0}"), "\"nbsp\u{a0}\"");
+        // Nothing but what YAML calls printable is ever written, whatever goes in.
+        for c in (0..=0x2100u32).chain(0xFE00..=0x1_0010).filter_map(char::from_u32) {
+            let quoted = q(&format!("a{c}b"));
+            let printable = |c: char| matches!(c, ' '..='~' | '\u{a0}'..='\u{2027}' | '\u{202a}'..='\u{d7ff}' | '\u{e000}'..='\u{fefe}' | '\u{ff00}'..='\u{fffd}' | '\u{10000}'..);
+            assert!(quoted.chars().all(printable), "U+{:04X}: {quoted:?}", c as u32);
+        }
     }
 
     #[test]

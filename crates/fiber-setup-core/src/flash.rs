@@ -197,3 +197,184 @@ pub fn run_to_file(
         seconds: started.elapsed().as_secs(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::firstboot::Wifi;
+    use crate::testimg;
+    use std::sync::Mutex;
+
+    fn settings() -> Settings {
+        Settings {
+            hostname: "fiber".into(),
+            username: "marek".into(),
+            password: "correct horse".into(),
+            ssh_key: Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample marek@laptop".into()),
+            wifi: Some(Wifi { ssid: "Dílna \"5G\"".into(), password: "pa:ss;word\\x".into(), hidden: true }),
+            country: "CZ".into(),
+            timezone: Some("Europe/Prague".into()),
+            install_fiber: true,
+        }
+    }
+
+    fn prepared(raw: &std::path::Path) -> Prepared {
+        Prepared {
+            raw: raw.to_path_buf(),
+            size: std::fs::metadata(raw).unwrap().len(),
+            source_sha256: String::new(),
+            official: false,
+            name: "test".into(),
+        }
+    }
+
+    /// The stages a run went through, in order.
+    fn phases(events: &Mutex<Vec<Event>>) -> Vec<Phase> {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|e| if let Event::Phase { phase } = e { Some(*phase) } else { None })
+            .collect()
+    }
+
+    #[test]
+    fn writes_the_image_with_the_settings_into_a_file() {
+        let t = tempfile::tempdir().unwrap();
+        let raw = t.path().join("os.img");
+        let original = testimg::disk();
+        std::fs::write(&raw, &original).unwrap();
+        let out = t.path().join("out.img");
+        let events = Mutex::new(Vec::new());
+        let report =
+            run_to_file(&prepared(&raw), &settings(), &out, &|e| events.lock().unwrap().push(e), &Cancel::new())
+                .unwrap();
+        assert_eq!(phases(&events), [Phase::Settings, Phase::Write, Phase::Verify, Phase::Done]);
+        assert_eq!(report.written, testimg::SIZE as u64);
+        assert_eq!(report.hostname, "fiber");
+        assert_eq!(report.serial, None);
+
+        // The image itself is never changed; the copy differs only in its boot partition.
+        assert_eq!(std::fs::read(&raw).unwrap(), original);
+        let written = std::fs::read(&out).unwrap();
+        assert_eq!(written.len(), original.len());
+        let (start, end) = (testimg::BOOT_START, testimg::BOOT_START + testimg::BOOT_SIZE);
+        assert!(written[..start] == original[..start]);
+        assert!(written[end..] == original[end..]);
+        assert!(written[start..end] != original[start..end]);
+
+        assert_eq!(
+            testimg::boot_files(&written),
+            ["cmdline.txt", "config.txt", "fiber-install.sh", "meta-data", "network-config", "user-data"]
+        );
+        let id = &report.instance_id;
+        assert_eq!(
+            testimg::boot_file(&written, "cmdline.txt").unwrap(),
+            format!("{} ds=nocloud;i={id} cfg80211.ieee80211_regdom=CZ\n", testimg::CMDLINE.trim_end())
+        );
+        assert_eq!(testimg::boot_file(&written, "meta-data").unwrap(), format!("instance-id: {id}\n"));
+        assert_eq!(testimg::boot_file(&written, "config.txt").unwrap(), "arm_64bit=1\n");
+        assert_eq!(testimg::boot_file(&written, "fiber-install.sh").unwrap(), firstboot::INSTALL_SCRIPT);
+        let user = testimg::boot_file(&written, "user-data").unwrap();
+        assert!(user.starts_with("#cloud-config\n"), "{user}");
+        assert!(user.contains("hostname: \"fiber\"\n"), "{user}");
+        assert!(user.contains("  name: \"marek\"\n"), "{user}");
+        assert!(user.contains("  passwd: \"$6$"), "{user}");
+        assert!(!user.contains("correct horse"), "the password itself must not be on the FIBER");
+        let network = testimg::boot_file(&written, "network-config").unwrap();
+        assert!(network.contains("        \"Dílna \\\"5G\\\"\":\n"), "{network}");
+        assert!(network.contains("          hidden: true\n"), "{network}");
+    }
+
+    #[test]
+    fn new_settings_replace_the_earlier_ones() {
+        let t = tempfile::tempdir().unwrap();
+        // An image that was set up before, and has started once: the files of an older FIBER
+        // Setup and the log of its first start are on it.
+        let boot = testimg::fat(
+            testimg::BOOT_SIZE,
+            &[
+                ("cmdline.txt", "console=tty1 rootwait ds=nocloud;i=old cfg80211.ieee80211_regdom=GB\n"),
+                ("user-data", "#cloud-config\nhostname: old\n"),
+                ("fiber-install.sh", "old script\n"),
+                ("fiber-cm4-setup.sh", "older script\n"),
+                ("fiber-setup.log", "old log\n"),
+            ],
+        );
+        let raw = t.path().join("os.img");
+        std::fs::write(&raw, testimg::disk_around(&boot)).unwrap();
+        let out = t.path().join("out.img");
+        let mut plain = settings();
+        plain.install_fiber = false;
+        plain.wifi = None;
+        plain.hostname = "bench-7".into();
+        let report = run_to_file(&prepared(&raw), &plain, &out, &|_| {}, &Cancel::new()).unwrap();
+        let written = std::fs::read(&out).unwrap();
+        assert_eq!(testimg::boot_files(&written), ["cmdline.txt", "meta-data", "network-config", "user-data"]);
+        assert_eq!(
+            testimg::boot_file(&written, "cmdline.txt").unwrap(),
+            format!("console=tty1 rootwait ds=nocloud;i={} cfg80211.ieee80211_regdom=CZ\n", report.instance_id)
+        );
+        let user = testimg::boot_file(&written, "user-data").unwrap();
+        assert!(user.contains("hostname: \"bench-7\"\n") && !user.contains("old"), "{user}");
+        assert!(!testimg::boot_file(&written, "network-config").unwrap().contains("wifis"));
+    }
+
+    #[test]
+    fn refuses_what_it_cannot_set_up_and_writes_nothing() {
+        let t = tempfile::tempdir().unwrap();
+        let out = t.path().join("out.img");
+        let try_image = |image: Vec<u8>, settings: &Settings| {
+            let raw = t.path().join("os.img");
+            std::fs::write(&raw, image).unwrap();
+            let error = run_to_file(&prepared(&raw), settings, &out, &|_| {}, &Cancel::new()).unwrap_err();
+            assert!(!out.exists(), "{error:#}");
+            format!("{error:#}")
+        };
+
+        let mut bad = settings();
+        bad.username = "root".into();
+        assert!(try_image(testimg::disk(), &bad).contains("user name"));
+
+        // A boot partition that is no FAT, one without cmdline.txt, one that ends after the image.
+        let error = try_image(testimg::disk_around(&vec![0u8; testimg::BOOT_SIZE]), &settings());
+        assert!(error.contains("boot partition (FAT)"), "{error}");
+        let error = try_image(testimg::disk_around(&testimg::fat(testimg::BOOT_SIZE, &[])), &settings());
+        assert!(error.contains("cmdline.txt"), "{error}");
+        let mut short = testimg::disk();
+        short.truncate(4 << 20);
+        let error = try_image(short, &settings());
+        assert!(error.contains("not where expected"), "{error}");
+        let mut no_table = testimg::disk();
+        no_table[510] = 0;
+        let error = try_image(no_table, &settings());
+        assert!(error.contains("no MBR partition table"), "{error}");
+    }
+
+    #[test]
+    fn a_stopped_write_leaves_no_partition_table() {
+        let t = tempfile::tempdir().unwrap();
+        let raw = t.path().join("os.img");
+        std::fs::write(&raw, testimg::disk()).unwrap();
+        let out = t.path().join("out.img");
+        // What is there from an earlier write must not survive as a disk that starts.
+        std::fs::write(&out, testimg::disk()).unwrap();
+        let cancel = Cancel::new();
+        let stop = cancel.clone();
+        let error = run_to_file(
+            &prepared(&raw),
+            &settings(),
+            &out,
+            &|e| {
+                if matches!(e, Event::Phase { phase: Phase::Write }) {
+                    stop.cancel();
+                }
+            },
+            &cancel,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "cancelled");
+        let left = std::fs::read(&out).unwrap();
+        assert!(left.len() >= 512 && left[..512].iter().all(|&b| b == 0), "{} bytes", left.len());
+    }
+}

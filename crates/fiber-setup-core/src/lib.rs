@@ -20,6 +20,8 @@ pub mod image;
 pub mod macos;
 pub mod mbr;
 pub mod rpiboot;
+#[cfg(test)]
+mod testimg;
 pub mod usb;
 #[cfg(windows)]
 pub mod windows;
