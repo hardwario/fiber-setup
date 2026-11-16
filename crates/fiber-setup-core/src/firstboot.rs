@@ -1,5 +1,5 @@
 //! The first-boot settings, written into the image's FAT boot partition before it reaches the
-//! eMMC (the "image loopback": change the image, then flash it). Same files and format as
+//! eMMC: the image is changed first, then written. Same files and format as
 //! Raspberry Pi Imager 2.x on Raspberry Pi OS trixie: cloud-init NoCloud `user-data`,
 //! `network-config` and `meta-data`, plus `ds=nocloud;i=<id>` and the Wi-Fi country on the
 //! kernel command line.

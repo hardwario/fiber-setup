@@ -8,8 +8,7 @@
 //
 // The pin is the commit 0.1.0 was made with: its gadget exposed a FIBER's eMMC on 2026-11-04.
 // Not the release tag before it (20261002-115811): that tag's boot.img is the corrupted one,
-// without kernel modules (usbboot#403), fixed in 861a703, which is why the Provisioning Station
-// pins its gadget files to 861a703.
+// without kernel modules (usbboot#403), fixed in 861a703.
 //
 // On Windows the USB driver's description (packaging/windows/driver) goes into the bundle too;
 // its signed catalog is made when a release is built.

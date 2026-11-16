@@ -1,10 +1,9 @@
 //! Block devices: finding the FIBER's eMMC, and writing and reading it back.
 //!
 //! Only a disk that rpiboot exposed on the FIBER's own USB port, with the CM4 gadget's SCSI
-//! identity, is ever written (`flash.rs`). The probe here is the Provisioning Station's
-//! (`proximos/provisioning`, `rpiboot.rs`), cut down.
+//! identity, is ever written (`flash.rs`).
 //!
-//! That probe reads sysfs, so it is Linux's; on macOS the disks come from the I/O Registry and
+//! The probe here reads sysfs, so it is Linux's; on macOS the disks come from the I/O Registry and
 //! are opened through `macos.rs`, on Windows from its storage management through `windows.rs`.
 
 use crate::event::{Cancel, Event, Phase, Sink, Throttle};

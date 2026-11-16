@@ -1,6 +1,6 @@
-//! USB and eMMC access without root: two udev rules under the Provisioning Station's file names.
-//! They are its rules with the partition lines fixed (see the eMMC rule). The Station only checks
-//! that the files exist, so it keeps ours; this app replaces the Station's text with ours.
+//! USB and eMMC access without root: two udev rules (`udev/`), one for the boot ROM and one for
+//! the eMMC. They count as installed only with our text: a file of the same name with another
+//! text is replaced.
 //!
 //! macOS has no such step: any user may talk to the boot ROM over USB, and for the eMMC macOS
 //! asks for the password each time it is written (`macos.rs`). There the rules count as

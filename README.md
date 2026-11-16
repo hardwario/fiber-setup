@@ -1,79 +1,358 @@
-# FIBER Setup
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/assets/brand/hardwario-fiber-logo-stacked-reversed.svg">
+    <img src="src/assets/brand/hardwario-fiber-logo-stacked.svg" alt="HARDWARIO FIBER" height="64">
+  </picture>
+</p>
 
-Sets up a HARDWARIO **FIBER** (CM4) from a computer with nothing but a USB cable: no J-Link, no Ethernet
-adapter, no terminal. A step-by-step wizard with drawings writes the operating system to the FIBER's eMMC over
-its USB-B port, together with the first-start settings (name, login, Wi-Fi). On its first start the FIBER
-installs the FIBER software by itself and restarts once.
+<h1 align="center">FIBER Setup</h1>
 
-Built with Tauri 2, Rust and Svelte 5: `crates/fiber-setup-core` (no Tauri), `crates/fiber-setup-cli`,
-`src-tauri`, `src`. The app speaks English, Czech, German, Slovak and Polish.
+<p align="center">
+  Sets up a HARDWARIO FIBER from your computer,<br>
+  step by step, with nothing but a USB cable.
+</p>
 
-**Status: 1.2.0 (2026-11-16).** Linux, macOS and Windows. On macOS the app has started a real FIBER over
-USB, written it and read it back (one FIBER). Not tried on real FIBERs yet: several at once, the
-start-again after RESET, and the Linux and Windows sides.
+<p align="center">
+  <a href="https://github.com/hardwario/fiber-setup/actions/workflows/ci.yml"><img src="https://github.com/hardwario/fiber-setup/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/hardwario/fiber-setup/releases/latest"><img src="https://img.shields.io/github/v/release/hardwario/fiber-setup" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/hardwario/fiber-setup" alt="Licence: MIT"></a>
+</p>
 
-## How it works
+<p align="center">
+  <a href="https://github.com/hardwario/fiber-setup/releases/latest"><b>Download</b></a> ·
+  <a href="#the-steps">The steps</a> ·
+  <a href="#several-fibers-at-once">Several FIBERs at once</a> ·
+  <a href="#command-line">Command line</a> ·
+  <a href="#building-from-source">Building from source</a>
+</p>
 
-1. **Software.** Raspberry Pi OS Lite (64-bit) 2026-10-06, checked against its published sha256. Downloaded
-   once into `~/.cache/fiber-setup`, or taken from Raspberry Pi Imager's cache when it has the same file.
-2. **Settings** go into the image's FAT boot partition before it is written (the "image loopback": change the
-   image, then flash it): cloud-init `user-data`, `network-config`, `meta-data` and the kernel command line,
-   the same files Raspberry Pi Imager 2.x writes. With "Install the FIBER software" on,
-   `image/fiber-install.sh` goes there too, and cloud-init runs it once on the first start: it waits for
-   the network and the clock, then runs HARDWARIO's one-command installer
-   `curl -fsSL https://raw.githubusercontent.com/hardwario/fiber-agent/main/bootstrap.sh | sudo bash`
-   (the latest fiber-agent release; v6.0.0 on 2026-11-04).
-3. **Boot mode.** With the jumper on BOOT the CM4 boot ROM appears on USB (`0a5c:2711`). The app sends it
-   Raspberry Pi's boot code and then the mass-storage gadget, the way Raspberry Pi's
-   [rpiboot](https://github.com/raspberrypi/usbboot) does (`crates/fiber-setup-core/src/rpiboot.rs`; no
-   separate program, no libusb), and the eMMC appears as a disk. Only a disk on that same USB port with the
-   CM4 gadget's identity is ever written. A board that does not take part (left in the middle of an earlier
-   start, or reset on the way) is not the end of it: the app says to press RESET and starts the board again
-   by itself when it is back in its boot ROM.
-4. **Write and check.** The image is written (partition table last), then read back from the eMMC and
-   compared byte for byte.
-5. **First start.** The FIBER joins the network, installs the software (about 10 minutes, needs the internet)
-   and restarts once. With the software it is `fiber-<last 8 characters of its CM4 serial>` from the very
-   first start: the app reads the serial over USB before writing, so the name never changes. Without the
-   software it keeps the name from the settings.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect.dark.webp">
+  <img src="docs/images/connect.webp" alt="FIBER Setup on its fifth step, Connect the FIBER: the FIBER was found on USB, and a drawing of the open FIBER shows the USB-B cable and the RESET button">
+</picture>
 
-## Several FIBERs at once
+## What it does
 
-Up to 8 FIBERs can be set up in one go, with the same settings. Connect each the same way (jumper on BOOT,
-USB-B cable, power, RESET): the Connect step lists every one it finds, each with a tick that can be taken
-off. The Write step then offers two ways:
+FIBER Setup is a desktop app for the HARDWARIO **[FIBER](https://docs.hardwario.com/fiber/)**, which is built
+on a Raspberry Pi Compute Module 4. Connect the FIBER to your computer with a USB cable, and the app:
+
+- downloads Raspberry Pi OS and checks it against its published checksum;
+- puts your settings into it: the device's name, the login, the time zone and the Wi-Fi;
+- writes it to the FIBER's built-in memory (eMMC) and reads it all back to check;
+- has the FIBER install the FIBER software by itself on its first start;
+- follows the first start and hands you the command to log in.
+
+Each step says what to do, with drawings of the FIBER that show where the jumper, the cable and the buttons
+are. One FIBER or up to eight at once.
+
+It runs on Windows, macOS and Linux, in English, Czech, German, Slovak and Polish. `fiber-setup-cli`, its
+sibling for the terminal, writes a FIBER without a window.
+
+## What you need
+
+- A FIBER and its power supply (PoE injector, 802.3af).
+- A USB cable with a USB-B plug for the FIBER: a data cable, not a charging-only one.
+- A small screwdriver to open the cover.
+- Your Wi-Fi name and password, or an Ethernet cable to your network.
+- The internet: on the computer for the download (once), and for the FIBER on its first start.
+
+It takes about 20 minutes: 5 to write, and about 10 for the FIBER to install its software on the first
+start. Everything on the FIBER's built-in memory is replaced.
+
+## Download
+
+Get the [latest release](https://github.com/hardwario/fiber-setup/releases/latest):
+
+| Platform | File |
+|---|---|
+| Windows 10/11 (x64) | `fiber-setup-<version>-windows-x64-setup.exe` (installer), or `fiber-setup-<version>-windows-x64-portable.zip` |
+| macOS 11+ (Apple silicon and Intel) | `fiber-setup-<version>-macos-universal.dmg` |
+| Linux (x86_64) | `fiber-setup-<version>-linux-x86_64.AppImage`, or `fiber-setup-<version>-linux-x86_64.deb` |
+
+Each file has its checksum next to it (`shasum -a 256 -c <file>.sha256`).
+
+### First run
+
+<details>
+<summary><b>Windows</b></summary>
+
+Run the installer. It puts the app into Program Files, installs Microsoft's WebView2 where Windows does not
+have it yet, and installs the USB driver. The portable zip is the same app in a folder: unpack it anywhere
+and start `fiber-setup.exe`.
+
+- The app asks for administrator rights when it starts (the usual Windows prompt): writing a disk and
+  installing a driver both need them.
+- Windows has no driver for a FIBER in boot mode. FIBER Setup brings one: a few lines that tell Windows to
+  use its own WinUSB, signed by HARDWARIO a.s. Windows asks once whether to trust software from
+  HARDWARIO a.s. With the portable zip, the *Connect the FIBER* step offers *Install the USB driver*.
+- The installer and the app are signed by HARDWARIO a.s. While a new release is still unknown to SmartScreen
+  it may warn: choose *More info → Run anyway*.
+
+</details>
+
+<details>
+<summary><b>macOS</b></summary>
+
+Open the dmg and drag *FIBER Setup* to *Applications*.
+
+- The app is signed by HARDWARIO and notarized by Apple, so it opens without warnings.
+- There is nothing to install or allow beforehand. When the write starts, macOS asks for the password or
+  Touch ID of an administrator: that is the right to open the FIBER's memory, and no other disk. It asks
+  once, also for several FIBERs. Nothing of the app runs as root.
+
+</details>
+
+<details>
+<summary><b>Linux</b></summary>
+
+Make the AppImage executable and start it, or install the deb:
+
+```sh
+chmod +x fiber-setup-*-linux-x86_64.AppImage && ./fiber-setup-*-linux-x86_64.AppImage
+sudo apt install ./fiber-setup-*-linux-x86_64.deb
+```
+
+- The first time, the *Connect the FIBER* step asks to **allow USB access**. It installs two udev rules
+  (`55-fiber-rpiboot.rules`, `61-fiber-cm4-emmc.rules` in `/etc/udev/rules.d`) that let your user talk to a
+  FIBER in boot mode and write its memory; other disks stay as they are. The password dialog is polkit's
+  (`pkexec`).
+- The app itself runs as your user, not as root.
+- The Linux files are not signed: check them against their `.sha256`.
+
+</details>
+
+## The steps
+
+Nine steps in three parts. The step list on the left shows where you are, and *Back* is always there.
+
+| | Step | What happens |
+|---|---|---|
+| **Prepare** | 1. Before you start | What you need and how long it takes |
+| | 2. Get the software | Raspberry Pi OS Lite (64-bit) is downloaded, checked and unpacked. Once: it is kept for the next FIBER. Your own image file works too |
+| | 3. Enter the settings | Device name, time zone, user name and password, your SSH key, the FIBER software, Wi-Fi |
+| **Write** | 4. Activate boot mode | Open the cover and move the jumper to `BOOT` |
+| | 5. Connect the FIBER | USB-B cable, power, `RESET`. The app finds the FIBER by itself |
+| | 6. Write the software | The image with your settings is written and read back, in about 5 minutes |
+| **Start** | 7. Start the FIBER | Jumper off `BOOT`, `RESET`, cover back on |
+| | 8. Follow the first start | The FIBER joins your network and installs the FIBER software, in about 10 minutes. The app looks for it on the network |
+| | 9. Log in to the system | The `ssh` command for your FIBER, with the user name and the password you chose |
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings.dark.webp">
+        <img src="docs/images/settings.webp" alt="Step 3, Settings: device name, time zone, user name, password and SSH key">
+      </picture>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/boot-mode.dark.webp">
+        <img src="docs/images/boot-mode.webp" alt="Step 4, Put the FIBER into boot mode: four instructions and a drawing of the open FIBER with the jumper's pins circled">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/write.dark.webp">
+        <img src="docs/images/write.webp" alt="Step 6, Write the FIBER: what goes onto the FIBER, and the image being written at 45 %">
+      </picture>
+    </td>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/done.dark.webp">
+        <img src="docs/images/done.webp" alt="Step 9, Your FIBER is set up: the ssh command by name and by address, the user name and the hidden password">
+      </picture>
+    </td>
+  </tr>
+</table>
+
+### Good to know
+
+- **Your settings stay with you.** They go onto the FIBER and nowhere else, and the app forgets the
+  passwords when it is closed.
+- **The login password is pre-filled with `fiber`.** Choose your own for a FIBER that others can reach. The
+  last step shows the user name and, on a click, the password.
+- **An Ethernet cable always works:** the FIBER gets its address by DHCP. Wi-Fi is a choice: none, set now,
+  or set later from your phone in the HARDWARIO Manager app over Bluetooth (with the FIBER software).
+- **The FIBER software** is what [hardwario/fiber-agent](https://github.com/hardwario/fiber-agent) installs:
+  the FIBER runs its installer once on the first start, which needs the internet. Turned off in the
+  settings, the FIBER gets a plain Raspberry Pi OS.
+- **The name.** With the FIBER software the FIBER is `fiber-<last 8 characters of its serial number>`, on
+  your network `fiber-….local`. The app reads the serial number over USB before it writes, so it can show
+  the name. Without the software the FIBER keeps the name from the settings.
+- **Nothing else is written.** The app writes only a disk that appeared on the FIBER's own USB port and
+  says it is a Compute Module 4's memory.
+- **A FIBER that does not answer** is not the end of it: the app says to press `RESET` and goes on by itself.
+- **If the first start fails,** the FIBER keeps the log in `/var/log/fiber-setup.log`, with a copy as
+  `fiber-setup.log` on its boot partition.
+
+### Several FIBERs at once
+
+Up to 8 FIBERs can be set up in one go, with the same settings. Connect each the same way (jumper on `BOOT`,
+USB-B cable, power, `RESET`): the *Connect the FIBER* step lists every one it finds, each with a tick that
+can be taken off.
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/several-connect.dark.webp">
+        <img src="docs/images/several-connect.webp" alt="Connect the FIBER with four FIBERs found on USB, each with a tick">
+      </picture>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/several-write.dark.webp">
+        <img src="docs/images/several-write.webp" alt="Write the FIBER with four FIBERs, each with its own progress bar">
+      </picture>
+    </td>
+  </tr>
+</table>
+
+The *Write the software* step then offers two ways:
 
 - **All at once.** Fastest when each FIBER is on its own USB port of the computer.
 - **One after another.** For FIBERs behind one USB hub, which share its speed anyway.
 
-Either way all of them are started over USB first, so a bad cable or a missing jumper shows at the start,
-and their disks are opened together: macOS asks for the password once, not for every FIBER. A FIBER that
-fails does not stop the others; it can be written again from the same step, and so can one connected
-later. With the FIBER software each FIBER is named after its serial number; without it they are numbered on
-from the name in the settings (`fiber`, `fiber-2`, ...). The steps after the write follow every FIBER:
-which still wait for RESET, which are on the network, and the login command of each.
+Either way all of them are started over USB first, so a bad cable or a missing jumper shows at the start. A
+FIBER that fails does not stop the others: it can be written again from the same step, and so can one
+connected later. With the FIBER software each FIBER is named after its serial number; without it they are
+numbered on from the name in the settings (`fiber`, `fiber-2`, ...). The steps after the write follow every
+FIBER: which still wait for `RESET`, which are on the network, and the login command of each.
 
-The command line (`fiber-setup-cli flash`) writes one FIBER at a time.
+### Updates
 
-## Run it
+When it starts, and once a day for as long as it stays open, the app asks GitHub for the newest release (and
+sends nothing else). When a newer one is out, the first page says so, with a *Download* button that opens
+the release's page, and a line under the step list keeps saying so on every step. The app does not update
+itself: download the new version and install it in place of the old one. `FIBER_SETUP_UPDATE_CHECK=0` turns
+the question off.
+
+### What has been tried
+
+On macOS, with a real FIBER: started over USB, written and read back. Not tried on a real FIBER yet: the
+Windows and the Linux builds, several FIBERs at once, and Wi-Fi from the phone. There the app has run
+against a simulated FIBER and in automated tests only. The German, Slovak and Polish texts have not been
+read by native speakers. If something does not work for you, please
+[open an issue](https://github.com/hardwario/fiber-setup/issues).
+
+## Command line
+
+`fiber-setup-cli` does the same from a terminal, one FIBER at a time. It is not among the release files yet:
+build it from source (below).
+
+```sh
+fiber-setup-cli devices             # FIBERs on USB and the disks on this computer
+fiber-setup-cli image               # download, check and unpack the image
+fiber-setup-cli access --install    # Linux: allow USB access; Windows: install the USB driver
+fiber-setup-cli boot                # start a FIBER over USB; nothing is written
+
+# write a FIBER
+FIBER_SETUP_PASSWORD=... FIBER_SETUP_WIFI_PASSWORD=... \
+  fiber-setup-cli flash --hostname fiber --wifi-ssid MyWifi --country CZ \
+    --ssh-key ~/.ssh/id_ed25519.pub
+
+fiber-setup-cli flash ... --to-file out.img   # the same into a file, no FIBER needed
+fiber-setup-cli inspect out.img               # the first-start files on an image or an eMMC
+fiber-setup-cli find fiber                    # look for fiber.local on this network
+```
+
+`fiber-setup-cli <command> --help` lists every option. The passwords come from the environment, so they do
+not end up in the shell's history. To start a FIBER over USB the command line needs the files that
+`npm run usbboot` fetches: point `FIBER_SETUP_USBBOOT` at their folder (`src-tauri/resources/usbboot`).
+
+## How it works
+
+1. **The image.** Raspberry Pi OS Lite (64-bit), checked against its published SHA-256. It is downloaded
+   once into the cache folder (`~/.cache/fiber-setup`, on Windows `%LOCALAPPDATA%\fiber-setup`), or taken
+   from Raspberry Pi Imager's cache when that has the same file.
+2. **The settings** go into the image's FAT boot partition before it is written: cloud-init's `user-data`,
+   `network-config` and `meta-data`, and the kernel command line, the same files Raspberry Pi Imager
+   writes. With the FIBER software on, [`image/fiber-install.sh`](image/fiber-install.sh) goes there too,
+   and cloud-init runs it once on the first start: it waits for the network and the clock, then runs the
+   installer from [hardwario/fiber-agent](https://github.com/hardwario/fiber-agent).
+3. **Boot mode.** With the jumper on `BOOT` the Compute Module's boot ROM appears on USB (`0a5c:2711`). The
+   app sends it Raspberry Pi's boot code and then the mass-storage gadget, the way Raspberry Pi's
+   [rpiboot](https://github.com/raspberrypi/usbboot) does
+   ([`rpiboot.rs`](crates/fiber-setup-core/src/rpiboot.rs): no separate program, no libusb), and the eMMC
+   appears as a disk.
+4. **Write and check.** The image is written, its partition table last, then read back from the eMMC and
+   compared byte for byte.
+5. **First start.** The FIBER joins the network, installs the software and restarts once. The app looks up
+   its name on the network (`<name>.local`) and checks that it answers on SSH.
+
+What differs between the systems is how the app finds the FIBER and how it may write the disk:
+
+<details>
+<summary><b>Windows</b></summary>
+
+- **Finding the FIBER.** The boards come from Windows' list of USB devices, the disks and the USB device each
+  hangs on from its storage management. A USB port is named after its place (`1400-2.1`: the controller,
+  then the port on each hub).
+- **The driver** is [`packaging/windows/driver/fiber-usbboot.inf`](packaging/windows/driver/fiber-usbboot.inf),
+  which binds the boot ROM to Windows' own WinUSB. Its catalog is signed when a release is built.
+- **Writing.** Windows writes into no volume it has mounted, so the eMMC's old partition table is removed
+  first (`diskpart clean`), and its volumes with it. The disk is opened by its device path, which names its
+  vendor and serial number, not by its number, and never if Windows boots from it.
+
+</details>
+
+<details>
+<summary><b>macOS</b></summary>
+
+- **Finding the FIBER.** The boards and the disks behind them come from the I/O Registry. The USB port is
+  named after its place (the bus, then the port on each hub: `1-1`, `2-1.3`).
+- **Writing.** When the write starts, the app asks macOS (Authorization Services) for the right to open the
+  FIBER's disks: one dialog, in the app's name. macOS's own `authopen` then opens each eMMC with that right
+  and hands it to the app. Before the dialog and again with the disk open, the app checks that the disk is
+  a Compute Module 4's eMMC on USB. It writes and reads back through the raw device (`/dev/rdiskN`), which
+  has no cache in between.
+- **Mounting.** macOS mounts every disk it sees. The FIBER's volumes are unmounted before the write, and the
+  eMMC is ejected after it, so macOS does not write its own files to the new boot partition.
+
+</details>
+
+<details>
+<summary><b>Linux</b></summary>
+
+- **Finding the FIBER.** The boards and the disks come from sysfs. The USB port is named as the kernel names
+  it (`3-2`, `1-1.4`).
+- **Writing.** The two udev rules ([`crates/fiber-setup-core/udev`](crates/fiber-setup-core/udev)) give the
+  desktop user the boot ROM and the eMMC's block device, and keep the desktop from mounting the FIBER's
+  partitions.
+
+</details>
+
+## Building from source
+
+Requirements: Rust 1.99+, Node.js 22+, and the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (on Linux:
+`libwebkit2gtk-4.1-dev librsvg2-dev patchelf`).
 
 ```sh
 npm ci
-npm run usbboot             # the gadget's files into src-tauri/resources/usbboot
-npm run tauri dev           # the app with hot reload
-npm run dev                 # the screens in a browser with a simulated FIBER: http://localhost:1430
+npm run usbboot       # the files a FIBER is started with, into src-tauri/resources/usbboot
+npm run tauri dev     # the app with hot reload
+npm run dev           # the screens in a browser, with a simulated FIBER
+npx tauri build       # release bundles: AppImage and deb, or the app and its dmg
+cargo build --release -p fiber-setup-cli
 ```
 
-`npm run usbboot` downloads the gadget's files (`boot.img`, `bootfiles.bin`, `config.txt`) from
-raspberrypi/usbboot, at the commit 0.1.0 was made with, and checks each against its pinned SHA-256. Nothing
-is built. With `USBBOOT_DIR` set it takes them from a usbboot checkout on this computer instead.
+`npm run usbboot` downloads the mass-storage gadget's files (`boot.img`, `bootfiles.bin`, `config.txt`)
+from [raspberrypi/usbboot](https://github.com/raspberrypi/usbboot), at a pinned commit, and checks each
+against its SHA-256. Nothing is built. With `USBBOOT_DIR` set it takes them from a usbboot checkout on this
+computer instead. `npm run dev` serves the browser preview at `http://localhost:1430`.
 
-Release build: `npx tauri build` gives `target/release/fiber-setup` and, in `target/release/bundle/`, the
-AppImage and .deb on Linux, `FIBER Setup.app` and the .dmg on macOS (with `CI=true` the .dmg is made
-without opening a Finder window). The releases on GitHub are built, signed and notarized by the Release
-workflow: [docs/release.md](docs/release.md).
+A copy built by hand is not signed: on macOS it starts on the Mac that built it and Gatekeeper stops it
+elsewhere, and Windows does not take its USB driver. The releases are built, signed and drafted by GitHub
+Actions from a version tag: see [docs/release.md](docs/release.md).
 
-On Windows (in PowerShell, as administrator for the app itself):
+<details>
+<summary><b>On Windows</b></summary>
+
+In PowerShell (as administrator to run the app itself):
 
 ```powershell
 npm ci
@@ -87,140 +366,83 @@ scripts\windows-package.ps1 -Step installer   # target\windows-package\out\...-s
 scripts\windows-package.ps1 -Step zip
 ```
 
-A driver built by hand is not signed, so Windows does not take it; `scripts\windows-test.ps1` shows how CI
-gets around that on its own machine.
+`scripts\windows-test.ps1` shows how CI gets Windows to take a driver it signed for the run, on its own
+machine.
 
-Demo: `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) runs the app on the same simulated FIBER, all steps
-from download to "Set up another FIBER", without touching USB or the network. The title says "(demo)".
+</details>
 
-## Updates
+<details>
+<summary><b>Development helpers</b></summary>
 
-When it starts, and once a day for as long as it stays open, the app asks GitHub for the newest release (and
-sends nothing else). When a newer one is out, the Welcome page says so, with a Download button that opens
-the release's page, and a line under the step list keeps saying so on every step. The app does not update
-itself: download the new version and install it in place of the old one. Drafts and pre-releases are never
-offered.
-
-| Setting | What it does |
+| Setting | Effect |
 |---|---|
-| `FIBER_SETUP_UPDATE_CHECK=0` | The app does not ask (the demo never does) |
+| `fiber-setup --demo` (or `FIBER_SETUP_DEMO=1`) | The app on a simulated FIBER, every step from the download to *Set up another FIBER*, without touching USB or the network. The title says "(demo)" |
+| `http://localhost:1430/?boards=4` | The browser preview with that many simulated FIBERs (up to 9, one more than can be written at once) |
+| `http://localhost:1430/?fail=1-2` | The preview with a FIBER whose first write fails (by its USB port) |
+| `http://localhost:1430/?update=available` | The preview with the notice of a newer version |
+| `FIBER_SETUP_UPDATE_CHECK=0` | The app does not ask GitHub for the newest release (the demo never does) |
 | `FIBER_SETUP_UPDATE_URL=http://…` | Ask this address instead of GitHub (a JSON file with `tag_name`), to try the notice |
 
-In the browser preview, `http://localhost:1430/?update=available` shows the notice.
+`npm run screenshots` regenerates the screenshots in this README (`docs/images`) from the browser preview,
+in the light and in the dark theme (needs Google Chrome).
 
-The preview also takes `?boards=4` for that many simulated FIBERs (up to 9, one more than can be written
-at once) and `?fail=1-2` for one whose first write fails.
+Translations: the dictionaries are `src/lib/i18n/{en,cs,de,sk,pl}.ts`. English is the reference; the others
+are type-checked against it, so a new text goes into all five. The installer's texts are in
+`packaging/windows/installer.nsi`.
 
-The first time on Linux, the app asks to **allow USB access**: two udev rules (the Fiber Provisioning
-Station's, with the partition lines fixed so the desktop does not mount the FIBER's partitions) that let the
-desktop user talk to the CM4 boot ROM and write the CM4 eMMC, and nothing else. They
-are installed with `pkexec` (password dialog).
+</details>
 
-## On Windows
-
-The steps are the same; these things under them differ.
-
-- **Administrator.** The app asks for administrator rights when it starts (the usual Windows prompt).
-  Writing a disk and installing a driver both need them.
-- **The USB driver.** Windows has no driver for a FIBER in boot mode. FIBER Setup brings one: a few lines
-  (`packaging/windows/driver/fiber-usbboot.inf`) that tell Windows to use its own WinUSB for the boot ROM,
-  with a catalog signed by HARDWARIO a.s. The installer installs it; otherwise the Connect step offers
-  "Install the USB driver". Windows asks once whether to trust software from HARDWARIO a.s.
-- **Finding the FIBER.** The boards come from Windows' list of USB devices, the disks and the USB device
-  each hangs on from its storage management (PowerShell's `Get-Disk` and the device tree). A USB port is
-  named after its place (`1400-2.1`: the controller, then the port on each hub).
-- **Writing.** Windows writes into no volume it has mounted, so the eMMC's old partition table is removed
-  first (`diskpart clean`), and its volumes with it. The disk is opened by its device path, which names its
-  vendor and serial number, not by its number, and never if Windows boots from it.
-
-The installer (`...-windows-x64-setup.exe`) puts the app into Program Files, installs Microsoft's WebView2
-where Windows does not have it yet, and installs the USB driver. The portable zip is the same app in a
-folder: unpack it anywhere and start `fiber-setup.exe`. Both are signed by HARDWARIO a.s.
-([docs/release.md](docs/release.md)).
-
-## On macOS
-
-The steps are the same; three things under them differ.
-
-- **Finding the FIBER.** The boards and the disks behind them come from the I/O Registry (`ioreg`). The USB
-  port is named after its place (the bus, then the port on each hub: `1-1`, `2-1.3`), from the device's
-  location.
-- **Writing.** There is nothing to allow beforehand. When the write starts, the app asks macOS for the right
-  to open that one disk: the usual dialog, in the app's name, for the password or Touch ID of an
-  administrator. macOS's own `authopen` then opens the eMMC with that right and hands it to the app, so
-  nothing of the app runs as root. Before the dialog and again with the disk open, the app checks that the
-  disk is a CM4's eMMC on USB; it opens no other disk.
-  The eMMC is written and read back through its raw device (`/dev/rdiskN`), which has no cache in between.
-- **Mounting.** macOS mounts every disk it sees. The FIBER's volumes are unmounted before the write, and the
-  eMMC is ejected after it, so macOS does not write its own files to the new boot partition.
-
-The app needs nothing installed where it runs, and the bundle holds one program, the app itself. A copy
-built by hand is not signed with a Developer ID and not notarized: it starts
-on the Mac that built it, and Gatekeeper stops it elsewhere. The released dmg is signed and notarized
-([docs/release.md](docs/release.md)).
-
-## Command line
-
-```sh
-fiber-setup-cli devices                      # FIBERs on USB and the disks on this computer
-fiber-setup-cli image                        # download/check/unpack the image
-fiber-setup-cli boot                         # start a FIBER over USB: its eMMC shows as a disk, nothing is written
-FIBER_SETUP_PASSWORD=... FIBER_SETUP_WIFI_PASSWORD=... \
-  fiber-setup-cli flash --hostname fiber --wifi-ssid MyWifi --country CZ --ssh-key ~/.ssh/id_ed25519.pub
-fiber-setup-cli flash ... --to-file out.img  # the same into a file, no FIBER needed
-fiber-setup-cli inspect out.img              # the first-boot files on an image or eMMC
-fiber-setup-cli find fiber                   # look for fiber.local
-```
-
-## Checks
+<details>
+<summary><b>Tests and checks</b></summary>
 
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-npm run check
+npm run check && npm test
 npm run build
 ```
 
-## Not in this version
+CI runs them on Windows, macOS and Linux, and on Windows also installs the app and its USB driver.
 
-- The ready FIBER image built in CI (software already inside, first start without internet).
-- Wi-Fi from the phone over Bluetooth is offered, but the first start still needs the internet (Ethernet)
-  to install the software; not tried with the HARDWARIO Manager app yet.
-- A plain customer build of the FIBER software: fiber-agent v6.0.0 is the ProXimos Hub stack branded FIBER.
-- Linux and Windows: a first write to a real FIBER (see the status above). On Windows also the first
-  install of the USB driver with a FIBER connected.
-- The app's own start over USB, which took the place of the bundled rpiboot in 1.2.0, has started a real
-  FIBER on macOS only; elsewhere, and where it starts a board again after RESET, it has been run against a
-  simulated board. `fiber-setup-cli boot` tries it on a real FIBER without writing anything.
-- Several FIBERs at once have been run against simulated boards only: whether macOS asks for the password
-  once for all their disks is still to be seen on real ones.
-- The installer's German, Slovak and Polish texts are built only with a release; the German, Slovak and
-  Polish texts of the app have not been read by native speakers.
-- Windows on ARM: the driver covers it, the app is built for Intel/AMD only (it runs there emulated).
+</details>
 
-## Pictures
+## Project layout
 
-The FIBER logo is a HARDWARIO artwork cleared for public use; `src/assets/artwork.lock.json` records its
-source file, checksum and version.
+| Path | Contents |
+|---|---|
+| `crates/fiber-setup-core` | Everything the app and the command line share, without Tauri: the image, the first-start settings, starting a FIBER over USB, finding its eMMC, writing and reading back, and what differs on Windows, macOS and Linux |
+| `crates/fiber-setup-cli` | `fiber-setup-cli` |
+| `src-tauri` | The desktop app: the window, its commands, the update check |
+| `src` | The wizard (Svelte 5): one view per step in `src/views`, translations in `src/lib/i18n`, drawings in `src/assets/drawings` |
+| `image` | `fiber-install.sh`, which the FIBER runs on its first start |
+| `packaging/windows` | The installer and the USB driver's description |
+| `scripts` | The gadget's files, the Windows package, the version check, the screenshots |
+| `docs` | [Releasing](docs/release.md), the screenshots |
 
-The app shows no photos. Its pictures (`src/assets/drawings`) are isometric drawings in the style of
-HARDWARIO's Brand Guidelines, each for the light and for the dark theme: the closed FIBER, the open FIBER
-with the jumper's pins circled, the jumper on BOOT and parked on one pin, the USB-B cable with the RESET
-button, the Ethernet cable, and the DOWN button circled. They are drawn in Typst with the guidelines' kit,
-the parts where the board's design (R2.1) has them; their sources are in HARDWARIO's artwork repository
-(`illustrations/isometric/iso-fiber-*`), which builds them (`make isometric`).
+## Contributing
 
-## Related repositories
+Issues and pull requests are welcome. Before a pull request, run the checks above. A few things to keep:
 
-- [hardwario/fiber-agent](https://github.com/hardwario/fiber-agent): the FIBER software; its `bootstrap.sh`
-  is what the FIBER runs on its first start.
-- [hardwario/fiber-platform](https://github.com/hardwario/fiber-platform): the FIBER platform setup by hand.
-- [raspberrypi/usbboot](https://github.com/raspberrypi/usbboot): the mass-storage gadget's files, fetched
-  by `npm run usbboot`, and rpiboot, whose way of starting a board over USB the app follows.
+- every text of the app in all five languages;
+- pictures of the FIBER are isometric drawings, each for the light and for the dark theme, and never
+  photos. They are HARDWARIO's artwork: if one needs a change, say so in an issue;
+- anything that writes a disk stays behind the checks that it is the FIBER's memory.
 
 ## Licence
 
-MIT (`LICENSE`), with one exception: `crates/fiber-setup-core/src/rpiboot.rs` is derived from Raspberry
-Pi's rpiboot and is, like it, under the Apache License 2.0 (`LICENSES/Apache-2.0.txt`). The gadget's files
-are Raspberry Pi's, under their own licences, which `npm run usbboot` puts into the bundle next to them.
+MIT, © 2026 HARDWARIO a.s. See [LICENSE](LICENSE). One file is an exception:
+[`crates/fiber-setup-core/src/rpiboot.rs`](crates/fiber-setup-core/src/rpiboot.rs) is derived from Raspberry
+Pi's rpiboot and is, like it, under the Apache License 2.0 ([LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)).
+
+The MIT licence covers the source code. The HARDWARIO and FIBER names, the HARDWARIO FIBER logo and the
+drawings of the FIBER are HARDWARIO a.s.'s and are not licensed for use in derived products.
+
+Third-party components include [Tauri](https://tauri.app) (MIT/Apache-2.0),
+[Svelte](https://svelte.dev) (MIT), [nusb](https://github.com/kevinmehall/nusb) (MIT/Apache-2.0), icons from
+[Lucide](https://lucide.dev) (ISC), and the [Inter](https://rsms.me/inter/) and
+[Roboto Mono](https://github.com/googlefonts/RobotoMono) fonts (SIL OFL 1.1, `src/assets/fonts/OFL-*.txt`).
+The files a FIBER is started with over USB are Raspberry Pi's, from
+[raspberrypi/usbboot](https://github.com/raspberrypi/usbboot), under their own licences, which
+`npm run usbboot` puts into the bundle next to them. Raspberry Pi OS is downloaded from Raspberry Pi and is
+not part of this repository or of the app.
