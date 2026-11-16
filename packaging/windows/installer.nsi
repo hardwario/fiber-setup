@@ -60,19 +60,38 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !insertmacro MUI_UNPAGE_INSTFILES
 !endif
 
+; The app's languages, in its order (src/lib/i18n).
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Czech"
+!insertmacro MUI_LANGUAGE "German"
+!insertmacro MUI_LANGUAGE "Slovak"
+!insertmacro MUI_LANGUAGE "Polish"
 
 LangString Running ${LANG_ENGLISH} "${PRODUCT} is running. Close it, then choose Retry."
 LangString Running ${LANG_CZECH} "${PRODUCT} je spuštěný. Zavřete ho a pak zvolte Opakovat."
+LangString Running ${LANG_GERMAN} "${PRODUCT} wird ausgeführt. Schließen Sie es und wählen Sie dann Wiederholen."
+LangString Running ${LANG_SLOVAK} "${PRODUCT} je spustený. Zavrite ho a potom zvoľte Opakovať."
+LangString Running ${LANG_POLISH} "${PRODUCT} jest uruchomiony. Zamknij go, a potem wybierz Ponów próbę."
 LangString WebView ${LANG_ENGLISH} "Installing Microsoft Edge WebView2, which the app's window needs..."
 LangString WebView ${LANG_CZECH} "Instaluje se Microsoft Edge WebView2, který potřebuje okno aplikace..."
-LangString Driver ${LANG_ENGLISH} "Installing the USB driver for a FIBER in USB mode. Windows may ask you to confirm it."
-LangString Driver ${LANG_CZECH} "Instaluje se ovladač USB pro FIBER v režimu USB. Windows vás mohou požádat o potvrzení."
+LangString WebView ${LANG_GERMAN} "Microsoft Edge WebView2 wird installiert, das das Fenster der App benötigt..."
+LangString WebView ${LANG_SLOVAK} "Inštaluje sa Microsoft Edge WebView2, ktorý potrebuje okno aplikácie..."
+LangString WebView ${LANG_POLISH} "Instalowanie Microsoft Edge WebView2, którego potrzebuje okno aplikacji..."
+LangString Driver ${LANG_ENGLISH} "Installing the USB driver for a FIBER in boot mode. Windows may ask you to confirm it."
+LangString Driver ${LANG_CZECH} "Instaluje se ovladač USB pro FIBER v režimu BOOT. Windows vás mohou požádat o potvrzení."
+LangString Driver ${LANG_GERMAN} "Der USB-Treiber für einen FIBER im Boot-Modus wird installiert. Windows bittet Sie möglicherweise um Bestätigung."
+LangString Driver ${LANG_SLOVAK} "Inštaluje sa ovládač USB pre FIBER v režime BOOT. Windows vás môže požiadať o potvrdenie."
+LangString Driver ${LANG_POLISH} "Instalowanie sterownika USB dla FIBER w trybie BOOT. Windows może poprosić o potwierdzenie."
 LangString DriverLater ${LANG_ENGLISH} "The USB driver was not installed now; the app offers it again in its Connect step."
 LangString DriverLater ${LANG_CZECH} "Ovladač USB se teď nenainstaloval; aplikace ho nabídne znovu v kroku Připojení."
+LangString DriverLater ${LANG_GERMAN} "Der USB-Treiber wurde jetzt nicht installiert; die App bietet ihn in ihrem Schritt zum Anschließen erneut an."
+LangString DriverLater ${LANG_SLOVAK} "Ovládač USB sa teraz nenainštaloval; aplikácia ho ponúkne znova v kroku pripojenia."
+LangString DriverLater ${LANG_POLISH} "Sterownik USB nie został teraz zainstalowany; aplikacja zaproponuje go ponownie w kroku podłączania."
 LangString Need64 ${LANG_ENGLISH} "${PRODUCT} needs a 64-bit Windows 10 or 11."
 LangString Need64 ${LANG_CZECH} "${PRODUCT} potřebuje 64bitové Windows 10 nebo 11."
+LangString Need64 ${LANG_GERMAN} "${PRODUCT} benötigt ein 64-Bit-Windows 10 oder 11."
+LangString Need64 ${LANG_SLOVAK} "${PRODUCT} potrebuje 64-bitový Windows 10 alebo 11."
+LangString Need64 ${LANG_POLISH} "${PRODUCT} wymaga 64-bitowego systemu Windows 10 lub 11."
 
 !ifdef UNINSTALLER_ONLY
 
@@ -97,7 +116,7 @@ Section "Uninstall"
   RMDir "$INSTDIR"
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
   ; The USB driver stays in Windows: it is a few lines that harm nothing, and another program
-  ; that talks to a Raspberry Pi in USB mode may rely on it by now.
+  ; that talks to a Raspberry Pi in boot mode may rely on it by now.
 SectionEnd
 
 !else

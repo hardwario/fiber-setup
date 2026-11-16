@@ -87,7 +87,9 @@
     }}
   />
   {#if open}
-    <ul class="list" role="listbox" id={`${id}-list`} bind:this={list}>
+    <!-- Not a stop for the Tab key. A list that scrolls is one by itself in Chromium (the app's
+         window on Windows): Tab went into it, the field closed it, and the focus was nowhere. -->
+    <ul class="list" role="listbox" tabindex="-1" id={`${id}-list`} bind:this={list}>
       {#each shown as c, i (c.value)}
         <!-- mousedown, not click: it comes before the input's blur closes the list. -->
         <li

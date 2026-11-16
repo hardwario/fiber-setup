@@ -6,6 +6,7 @@ import { prefs } from "./prefs.svelte";
 import type {
   AccessStatus,
   AppInfo,
+  FlashDevice,
   FlashReport,
   Found,
   JobEvent,
@@ -37,11 +38,18 @@ export const STEP_ICONS: Record<StepId, string> = {
   start: "timer",
   done: "circle-check",
 };
-export type Network = "wifi" | "ethernet" | "phone";
+/** What happens with Wi-Fi: set now, set later from the phone app, or not used. The Ethernet
+ * cable is no choice: it always works (DHCP), whatever is chosen here. */
+export type Network = "wifi" | "phone" | "none";
 
-interface Job<T> {
+/** How many FIBERs can be written at once (the app's backend holds the same limit). */
+export const MAX_DEVICES = 8;
+
+export interface Job<T> {
   busy: boolean;
   phase: Phase | null;
+  /** When this phase began (ms), to tell when one takes unusually long. */
+  since: number;
   done: number;
   total: number;
   result: T | null;
@@ -50,12 +58,13 @@ interface Job<T> {
 }
 
 function job<T>(): Job<T> {
-  return { busy: false, phase: null, done: 0, total: 0, result: null, error: null, log: [] };
+  return { busy: false, phase: null, since: Date.now(), done: 0, total: 0, result: null, error: null, log: [] };
 }
 
 function apply<T>(j: Job<T>, e: JobEvent) {
   if (e.type === "phase") {
     j.phase = e.phase;
+    j.since = Date.now();
     j.done = 0;
     j.total = 0;
   } else if (e.type === "progress") {
@@ -98,9 +107,12 @@ class Wizard {
   form = $state({
     hostname: "fiber",
     username: "fiber",
-    password: "",
-    password2: "",
-    network: "wifi" as Network,
+    // Pre-filled, like the user name: a FIBER can be set up without typing anything. The page
+    // says so, and the last page shows both again.
+    password: "fiber",
+    password2: "fiber",
+    // The Ethernet cable always works; Wi-Fi is what the user adds.
+    network: "none" as Network,
     ssid: "",
     wifiPassword: "",
     hidden: false,
@@ -112,16 +124,30 @@ class Wizard {
   /** A field shows its error only after the user left it or pressed Next. */
   touched = $state<Record<string, boolean>>({});
 
+  /** The FIBERs on USB now, in boot mode or with their memory connected. */
   boards = $state.raw<UsbBoard[]>([]);
   access = $state.raw<AccessStatus | null>(null);
   accessBusy = $state(false);
   accessError = $state<string | null>(null);
-  port = $state<string | null>(null);
+  /** USB ports of FIBERs the user unticked: found, but not to be written. */
+  skipped = $state<string[]>([]);
+  /** Several FIBERs are written all at once, or one after another. */
+  together = $state(true);
 
-  flash = $state<Job<FlashReport>>(job<FlashReport>());
-  /** What the last write put on the FIBER, for the last steps (the form may change after). */
-  written = $state.raw<{ hostname: string; username: string; network: Network; ssid: string; installFiber: boolean } | null>(null);
-  found = $state.raw<(Found & { name: string }) | null>(null);
+  /** The write of each FIBER, by its USB port: what it is doing, and how it ended. */
+  jobs = $state<Record<string, Job<FlashReport>>>({});
+  /** From the press of Write until the last FIBER of it is through. */
+  batch = $state(false);
+  /** What the writes put on the FIBERs, for the last steps (the form may change after). */
+  written = $state.raw<{
+    username: string;
+    password: string;
+    network: Network;
+    ssid: string;
+    installFiber: boolean;
+  } | null>(null);
+  /** Where each written FIBER was found on the network, by its name. */
+  found = $state.raw<Record<string, Found>>({});
   searchSince = $state(0);
   /** A newer version of FIBER Setup, when there is one. */
   update = $state.raw<Release | null>(null);
@@ -154,14 +180,14 @@ class Wizard {
         },
       );
       await this.api.onFlash(
-        (e) => apply(this.flash, e),
-        (d) => {
-          this.flash.busy = false;
-          this.flash.result = d.result;
-          this.flash.error = d.error;
-          // The name it was written with (fiber-<serial> with the FIBER software).
-          if (d.result && this.written) this.written = { ...this.written, hostname: d.result.hostname };
+        (port, e) => apply((this.jobs[port] ??= job<FlashReport>()), e),
+        (port, d) => {
+          const j = (this.jobs[port] ??= job<FlashReport>());
+          j.busy = false;
+          j.result = d.result;
+          j.error = d.error;
         },
+        () => (this.batch = false),
       );
       await this.api.onUpdate((release) => (this.update = release));
       // What a check found before the window was listening.
@@ -194,7 +220,7 @@ class Wizard {
   }
 
   back() {
-    if (this.index > 0 && !this.flash.busy) this.step = STEPS[this.index - 1];
+    if (this.index > 0 && !this.writing) this.step = STEPS[this.index - 1];
   }
 
   /** Work a step starts by itself when it opens. */
@@ -210,9 +236,9 @@ class Wizard {
       case "settings":
         return Object.keys(this.errors).length === 0;
       case "connect":
-        return !!this.port && !!this.access?.rules_installed;
+        return this.targets.length > 0 && !!this.access?.rules_installed;
       case "write":
-        return !!this.flash.result && !this.flash.busy;
+        return this.done.length > 0 && !this.writing;
       default:
         return true;
     }
@@ -268,18 +294,88 @@ class Wizard {
     if (file) this.prepareImage(file);
   }
 
+  /** Calls `look` now and then again `every` ms after each look has finished, until the returned
+   * function is called: a slow look never has a second one started behind it. */
+  watchUsb(every: number, looked: () => void = () => {}): () => void {
+    let stop = false;
+    const loop = async () => {
+      while (!stop) {
+        try {
+          await this.refreshUsb();
+          looked();
+        } catch {
+          // A look that failed is tried again like any other.
+        }
+        await new Promise((r) => setTimeout(r, every));
+      }
+    };
+    loop();
+    return () => (stop = true);
+  }
+
   async refreshUsb() {
     if (!this.api) return;
+    this.api.atStep?.(this.step);
     const [boards, access] = await Promise.all([this.api.usbBoards(), this.api.accessStatus()]);
     this.boards = boards;
     this.access = access;
-    // One board: that one. Several: the one the user picked, while it is still there.
-    if (boards.length === 1) this.port = boards[0].port;
-    else if (!boards.some((b) => b.port === this.port)) this.port = null;
   }
 
-  choosePort(port: string) {
-    this.port = port;
+  /** The USB ports the Write button writes: the FIBERs on USB that are not written yet and that
+   * the user did not untick (one FIBER alone is always the one), up to the limit. A failed one
+   * is among them again, and so is one connected since, or one that was over the limit before. */
+  get toWrite(): string[] {
+    const alone = this.boards.length === 1;
+    return this.boards
+      .filter((b) => !this.jobs[b.port]?.result && (alone || !this.skipped.includes(b.port)))
+      .slice(0, MAX_DEVICES)
+      .map((b) => b.port);
+  }
+
+  /** The chosen FIBERs: those to write, and those on USB that are written already. */
+  get targets(): UsbBoard[] {
+    const next = this.toWrite;
+    return this.boards.filter((b) => next.includes(b.port) || !!this.jobs[b.port]?.result);
+  }
+
+  /** Whether a FIBER on USB is among those to write. */
+  chosen(port: string): boolean {
+    return this.targets.some((b) => b.port === port);
+  }
+
+  /** A FIBER that is not unticked and still is not written: one more than fit. */
+  overLimit(port: string): boolean {
+    return !this.skipped.includes(port) && !this.chosen(port);
+  }
+
+  /** Ticks or unticks a FIBER in the list. */
+  choose(port: string, write: boolean) {
+    this.skipped = write ? this.skipped.filter((p) => p !== port) : [...new Set([...this.skipped, port])];
+  }
+
+  /** A write is going on. */
+  get writing(): boolean {
+    return this.batch || Object.values(this.jobs).some((j) => j.busy);
+  }
+
+  /** The FIBERs that are written and read back, in the order they were started. */
+  get done(): { port: string; report: FlashReport }[] {
+    return Object.entries(this.jobs).flatMap(([port, j]) => (j.result ? [{ port, report: j.result }] : []));
+  }
+
+  /** The ports the Write step shows a line for: what was written or tried, then what is to come. */
+  get ports(): string[] {
+    return [...new Set([...Object.keys(this.jobs), ...this.toWrite])];
+  }
+
+  /** The name the `n`th FIBER (from 0) gets without the FIBER software: the one from the settings,
+   * then the next numbers (fiber, fiber-2, fiber-3; bench-7, bench-8). Two FIBERs with one name
+   * would both be <name>.local. */
+  nameAt(n: number): string {
+    const m = this.form.hostname.match(/^(.*?)(?:-(\d+))?$/);
+    if (!m) return this.form.hostname;
+    const number = (m[2] ? Number(m[2]) : 1) + n;
+    return (number === 1 ? m[1] : `${m[1]}-${number}`).slice(0, 63);
   }
 
   async allowAccess() {
@@ -295,19 +391,35 @@ class Wizard {
     }
   }
 
+  /** Writes the chosen FIBERs that are not written yet. */
   startFlash() {
-    if (!this.api || !this.port || this.flash.busy) return;
+    const ports = this.toWrite;
+    if (!this.api || ports.length === 0 || this.writing) return;
+    const fail = (error: string) => {
+      for (const port of ports) this.jobs[port] = { ...job<FlashReport>(), error };
+    };
     // The sidebar can reach this step past a half-edited form; never write unchecked settings.
-    if (Object.keys(this.errors).length) {
-      Object.assign(this.flash, { ...job<FlashReport>(), error: t().write.checkSettings });
-      return;
-    }
+    if (Object.keys(this.errors).length) return fail(t().write.checkSettings);
     const f = this.form;
-    this.written = { hostname: f.hostname, username: f.username, network: f.network, ssid: f.ssid, installFiber: f.installFiber };
-    Object.assign(this.flash, { ...job<FlashReport>(), busy: true });
-    this.api.flashStart(this.settings(), this.port).catch((e) => {
-      this.flash.busy = false;
-      this.flash.error = String(e);
+    this.written = {
+      username: f.username,
+      password: f.password,
+      network: f.network,
+      ssid: f.ssid,
+      installFiber: f.installFiber,
+    };
+    // With the FIBER software each FIBER is named after its serial number; without it, each
+    // gets the next name after those already written.
+    const already = this.done.length;
+    const devices: FlashDevice[] = ports.map((port, i) => ({
+      port,
+      hostname: f.installFiber ? null : this.nameAt(already + i),
+    }));
+    for (const port of ports) this.jobs[port] = { ...job<FlashReport>(), busy: true };
+    this.batch = true;
+    this.api.flashStart(this.settings(), devices, this.together || devices.length === 1, t().write.macPrompt).catch((e) => {
+      this.batch = false;
+      fail(String(e));
     });
   }
 
@@ -339,40 +451,32 @@ class Wizard {
     await this.api?.copyText(text);
   }
 
-  /** The name the FIBER software gives the FIBER, fiber-<serial> (from the write report), which it
-   * has from the first start; null without the FIBER software. */
-  get hubName(): string | null {
-    return this.written?.installFiber ? (this.flash.result?.hub_name ?? null) : null;
+  /** The name each written FIBER has on the network from its first start: fiber-<serial> with the
+   * FIBER software, else the one it was given. (Before anything is written: the one from the
+   * settings.) */
+  get names(): string[] {
+    const names = this.done.map((d) => d.report.hostname);
+    return names.length > 0 ? names : [this.form.hostname];
   }
 
-  /** Looks for the FIBER under its name: fiber-<serial> with the FIBER software (from the first
-   * start), else the one from the settings. */
+  /** Looks for every written FIBER under its name, all at the same time. */
   async search() {
     if (!this.api) return;
-    const names = [...new Set([this.hubName, this.written?.hostname ?? this.form.hostname])].filter(
-      (n): n is string => !!n,
-    );
-    for (const name of names) {
-      const found = await this.api.findDevice(name);
-      if (found) {
-        this.found = { ...found, name };
-        return;
-      }
-    }
-    this.found = null;
+    const api = this.api;
+    const looked = await Promise.all(this.names.map(async (name) => [name, await api.findDevice(name)] as const));
+    this.found = Object.fromEntries(looked.flatMap(([name, found]) => (found ? [[name, found]] : [])));
   }
 
-  /** Another FIBER with the same settings: back to the jumper, the passwords kept for this session. */
+  /** More FIBERs with the same settings: back to the jumper, the passwords kept for this session. */
   another() {
-    // Two FIBERs with one name would both be <name>.local; suggest the next one (fiber, fiber-2, ...).
-    // With the FIBER software each is named after its own serial number.
-    const m = this.form.hostname.match(/^(.*?)(?:-(\d+))?$/);
-    if (m && !this.form.installFiber) this.form.hostname = `${m[1]}-${m[2] ? Number(m[2]) + 1 : 2}`.slice(0, 63);
+    // Without the FIBER software the names go on where they stopped (fiber, fiber-2, ...).
+    if (!this.form.installFiber) this.form.hostname = this.nameAt(Math.max(1, this.done.length));
     this.written = null;
     this.api?.nextBoard?.();
-    this.flash = job<FlashReport>();
-    this.found = null;
-    this.port = null;
+    this.jobs = {};
+    this.batch = false;
+    this.found = {};
+    this.skipped = [];
     this.reached = STEPS.indexOf("jumper");
     this.step = "jumper";
   }

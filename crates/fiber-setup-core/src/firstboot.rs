@@ -381,6 +381,24 @@ mod tests {
         }
     }
 
+    /// The Settings page says the Ethernet cable always works: every network configuration must
+    /// ask for DHCP on it, with Wi-Fi or without, and never wait for it at the start.
+    #[test]
+    fn ethernet_gets_its_address_by_dhcp_whatever_the_wifi() {
+        let with_wifi = sample();
+        let mut without = sample();
+        without.wifi = None;
+        let mut open_wifi = sample();
+        open_wifi.wifi = Some(Wifi { ssid: "Guests".into(), password: String::new(), hidden: false });
+        for s in [with_wifi, without, open_wifi] {
+            let n = render(&s, "id", "h").network_config;
+            assert!(
+                n.contains("  ethernets:\n    eth0:\n      dhcp4: true\n      dhcp6: true\n      optional: true\n"),
+                "{n}"
+            );
+        }
+    }
+
     #[test]
     fn no_fiber_install_means_no_script_and_no_restart() {
         let mut s = sample();

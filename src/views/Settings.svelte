@@ -9,12 +9,19 @@
 
   const f = $derived(wizard.form);
   const info = $derived(wizard.info);
-  // One way to the network is chosen: a list to pick from, the chosen one opened.
-  const NETWORKS: { value: Network; icon: string; desc: "wifiDesc" | "ethernetDesc" | "phoneDesc" }[] = [
+  // The Ethernet cable always works, so the choice is about Wi-Fi only: a list to pick from, the
+  // chosen one opened.
+  const NETWORKS: { value: Network; icon: string; desc: "wifiDesc" | "phoneDesc" | "noneDesc" }[] = [
+    // The default first: what works with nothing more to enter.
+    { value: "none", icon: "ethernet", desc: "noneDesc" },
     { value: "wifi", icon: "wifi", desc: "wifiDesc" },
-    { value: "ethernet", icon: "ethernet", desc: "ethernetDesc" },
     { value: "phone", icon: "phone", desc: "phoneDesc" },
   ];
+  /** Wi-Fi from the phone app comes with the FIBER software: without it, that choice is off, and
+   * if it was the chosen one, the choice falls back to no Wi-Fi. */
+  function softwareChanged(install: boolean) {
+    if (!install && f.network === "phone") f.network = "none";
+  }
 
   /** The message for a field, once the user has left it (or pressed Next). */
   function err(field: string): string | null {
@@ -135,18 +142,30 @@
 </section>
 
 <section class="card pad">
+  <h2><Icon name="package" size={16} /> {t().settings.software}</h2>
+  <label class="check">
+    <input type="checkbox" bind:checked={f.installFiber} onchange={(e) => softwareChanged(e.currentTarget.checked)} />
+    <span>
+      {t().settings.installFiber}
+      <span class="hint block">{t().settings.installFiberHint}</span>
+    </span>
+  </label>
+</section>
+
+<section class="card pad">
   <h2><Icon name="globe" size={16} /> {t().settings.network}</h2>
   <p class="muted">{t().settings.networkLead}</p>
   <div class="choices" role="radiogroup" aria-label={t().settings.network}>
     {#each NETWORKS as n (n.value)}
       {@const chosen = f.network === n.value}
-      <div class="choice" class:chosen>
+      {@const off = n.value === "phone" && !f.installFiber}
+      <div class="choice" class:chosen class:off>
         <label class="head">
-          <input type="radio" name="network" value={n.value} bind:group={f.network} />
+          <input type="radio" name="network" value={n.value} bind:group={f.network} disabled={off} />
           <span class="glyph"><Icon name={n.icon} size={18} /></span>
           <span class="text">
             <span class="title">{t().settings[n.value]}</span>
-            <span class="desc">{t().settings[n.desc]}</span>
+            <span class="desc">{off ? t().settings.phoneOff : t().settings[n.desc]}</span>
           </span>
         </label>
         {#if chosen && n.value === "wifi"}
@@ -175,15 +194,15 @@
               </div>
             </div>
           </div>
-        {:else if chosen && n.value === "ethernet"}
-          <div class="more"><p class="muted">{t().settings.ethernetHint}</p></div>
-        {:else if chosen}
+        {:else if chosen && n.value === "phone"}
           <div class="more"><p class="muted">{t().settings.phoneHint}</p></div>
+        {:else if chosen}
+          <div class="more"><p class="muted">{t().settings.noneHint}</p></div>
         {/if}
       </div>
     {/each}
   </div>
-  {#if f.network !== "ethernet"}
+  {#if f.network !== "none"}
     <div class="lines">
       <div class="line">
         <label class="name" for="country">{t().settings.country}</label>
@@ -195,17 +214,6 @@
     </div>
   {/if}
   {#if networkError}<div class="note critical"><Icon name="warning" size={16} /><span>{networkError}</span></div>{/if}
-</section>
-
-<section class="card pad">
-  <h2><Icon name="package" size={16} /> {t().settings.software}</h2>
-  <label class="check">
-    <input type="checkbox" bind:checked={f.installFiber} />
-    <span>
-      {t().settings.installFiber}
-      <span class="hint block">{t().settings.installFiberHint}</span>
-    </span>
-  </label>
 </section>
 
 <style>
@@ -266,12 +274,24 @@
       border-color 0.12s ease,
       background 0.12s ease;
   }
-  .choice:hover:not(.chosen) {
+  .choice:hover:not(.chosen):not(.off) {
     border-color: var(--text-muted);
   }
   .choice.chosen {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  }
+  /* A choice that cannot be made now: pale, and its text says what it needs. */
+  .choice.off {
+    border-color: var(--border);
+  }
+  .choice.off .head,
+  .choice.off .head input {
+    cursor: default;
+  }
+  .choice.off .glyph,
+  .choice.off .title {
+    opacity: 0.5;
   }
   .head {
     display: flex;
@@ -342,7 +362,8 @@
   p {
     margin: 0;
   }
-  @media (max-width: 720px) {
+  /* Too narrow for a name beside its field: the name goes above it. */
+  @container (max-width: 520px) {
     .line,
     .more .line {
       grid-template-columns: minmax(0, 1fr);

@@ -1,9 +1,13 @@
 <script lang="ts">
-  /** A reference photo for a hands-on step, with its caption. A click shows it over the whole window. */
+  /** The picture for a hands-on step: a drawing of the FIBER, made for the light ground and, in
+   * `dark`, for the dark one. It stands right under the step's text, so it has no caption; `alt`
+   * says what it shows. A click shows it over the whole window. */
   import { t } from "../i18n/index.svelte";
+  import { prefs } from "../prefs.svelte";
 
-  let { src, alt, caption }: { src: string; alt: string; caption?: string } = $props();
+  let { src, dark, alt }: { src: string; dark?: string; alt: string } = $props();
   let big = $state(false);
+  const shown = $derived(dark && prefs.effectiveTheme === "dark" ? dark : src);
 </script>
 
 <svelte:window
@@ -12,19 +16,18 @@
   }}
 />
 
-<figure class="photo">
-  <button class="shot" title={t().common.enlarge} onclick={() => (big = true)}><img {src} {alt} /></button>
-  {#if caption}<figcaption>{caption}</figcaption>{/if}
+<figure class="picture">
+  <button class="shot" title={t().common.enlarge} onclick={() => (big = true)}><img src={shown} {alt} /></button>
 </figure>
 
 {#if big}
   <button class="overlay" title={t().common.close} aria-label={t().common.close} onclick={() => (big = false)}>
-    <img {src} {alt} />
+    <img src={shown} {alt} />
   </button>
 {/if}
 
 <style>
-  .photo {
+  .picture {
     margin: 0;
     display: flex;
     flex-direction: column;
@@ -38,19 +41,14 @@
     background: none;
     cursor: zoom-in;
   }
+  /* A drawing stands on its own ground plate: no frame around it. */
   .shot img {
     display: block;
     width: 100%;
     max-height: 380px;
     object-fit: contain;
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-    background: var(--surface-2);
   }
-  figcaption {
-    font-size: 12.5px;
-    color: var(--text-muted);
-  }
+  /* Large, on the ground the drawing was made for. */
   .overlay {
     position: fixed;
     inset: 0;
@@ -58,15 +56,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    padding: 32px;
     border: 0;
-    background: rgba(0, 0, 0, 0.82);
+    background: var(--surface);
     cursor: zoom-out;
   }
   .overlay img {
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
-    border-radius: var(--radius);
   }
 </style>

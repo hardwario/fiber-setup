@@ -53,8 +53,9 @@ A verification step fails the job unless Gatekeeper (`spctl`) accepts the app an
 stapled, and the app's program is signed with Developer ID, a timestamp and the hardened runtime and is for
 both architectures.
 
-The app needs no entitlements: it is not sandboxed, WebKit runs its JIT in Apple's own processes, and USB
-and the tools the app starts (`ioreg`, `diskutil`, `authopen`) need none outside the sandbox.
+The app needs no entitlements: it is not sandboxed, WebKit runs its JIT in Apple's own processes, and USB,
+the right it asks macOS for before a write (Authorization Services) and the tools it starts (`ioreg`,
+`diskutil`, `authopen`) need none outside the sandbox.
 
 The build job never sees the certificate: it makes an ad-hoc signed app, and only `sign-macos` imports the
 certificate, into a temporary keychain it deletes at the end.

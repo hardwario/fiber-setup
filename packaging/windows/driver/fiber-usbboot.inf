@@ -1,4 +1,4 @@
-; FIBER Setup: the USB driver for a FIBER in USB mode (jumper on BOOT).
+; FIBER Setup: the USB driver for a FIBER in boot mode (jumper on BOOT).
 ;
 ; In that mode the FIBER's Raspberry Pi Compute Module shows its boot ROM on USB, and Windows has
 ; no driver for it. This binds the boot ROM to WinUSB, the driver that is part of Windows, so

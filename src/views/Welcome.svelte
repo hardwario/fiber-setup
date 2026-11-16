@@ -1,8 +1,10 @@
 <script lang="ts">
-  import fiber from "../assets/photos/fiber-product.png";
+  import fiberDark from "../assets/drawings/iso-fiber-closed-dark-theme.svg";
+  import fiber from "../assets/drawings/iso-fiber-closed.svg";
   import Icon from "../lib/components/Icon.svelte";
   import UpdateNotice from "../lib/components/UpdateNotice.svelte";
   import { t } from "../lib/i18n/index.svelte";
+  import { prefs } from "../lib/prefs.svelte";
 
   // One glyph for each thing on the "What you need" list, in its order.
   const NEEDS = ["plug", "usb", "wrench", "wifi"];
@@ -10,7 +12,7 @@
 
 <UpdateNotice />
 
-<img class="product" src={fiber} alt="HARDWARIO FIBER" />
+<img class="product" src={prefs.effectiveTheme === "dark" ? fiberDark : fiber} alt="HARDWARIO FIBER" />
 
 <section class="card pad">
   <h2><Icon name="list-checks" size={16} /> {t().welcome.needTitle}</h2>
@@ -29,13 +31,11 @@
 <div class="note warning"><Icon name="warning" size={16} /><span>{t().welcome.erase}</span></div>
 
 <style>
-  /* The picture is square with the FIBER in its middle: only that middle band is shown. */
+  /* The drawing of the FIBER, on the ground plate made for the theme. */
   .product {
     display: block;
     width: 100%;
-    max-width: 280px;
-    aspect-ratio: 3 / 2;
-    object-fit: cover;
+    max-width: 340px;
     margin: 0 auto;
   }
   .needs {

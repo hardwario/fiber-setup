@@ -1,7 +1,6 @@
 //! Update notices: whether GitHub has a newer published release of FIBER Setup than this
 //! version. Nothing is downloaded or installed: the app says so and opens the release's page,
-//! where the user takes the new version from. The same as in TOWER Bridge, whose `update.rs`
-//! this follows.
+//! where the user takes the new version from.
 
 use semver::Version;
 use serde::{Deserialize, Serialize};

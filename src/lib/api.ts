@@ -3,10 +3,12 @@
  * (`npm run dev`, then http://localhost:1430) and in the app started with `--demo`, so the screens
  * can be shown and checked without hardware.
  */
+import { langOf } from "./i18n/index.svelte";
 import type {
   AccessStatus,
   AppInfo,
   Done,
+  FlashDevice,
   FlashReport,
   Found,
   ImageStatus,
@@ -29,13 +31,21 @@ export interface Api {
   accessStatus(): Promise<AccessStatus>;
   accessInstall(): Promise<AccessStatus>;
   usbBoards(): Promise<UsbBoard[]>;
-  flashStart(settings: Settings, port: string): Promise<void>;
+  /** Writes the FIBERs of `devices`, all at once (`together`) or one after another. `prompt`: the
+   * app's sentence for macOS's password dialog, in the user's language. */
+  flashStart(settings: Settings, devices: FlashDevice[], together: boolean, prompt: string): Promise<void>;
   cancel(): Promise<void>;
   findDevice(hostname: string): Promise<Found | null>;
   openLink(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
   onImage(cb: (e: JobEvent) => void, done: (d: Done<Prepared>) => void): Promise<Unlisten>;
-  onFlash(cb: (e: JobEvent) => void, done: (d: Done<FlashReport>) => void): Promise<Unlisten>;
+  /** What each FIBER of a write does (`cb`) and how it ended (`done`), by its USB port; `finished`
+   * when all of them are through. */
+  onFlash(
+    cb: (port: string, e: JobEvent) => void,
+    done: (port: string, d: Done<FlashReport>) => void,
+    finished: () => void,
+  ): Promise<Unlisten>;
   /** The newer version of FIBER Setup that a check found so far, if any. */
   updateAvailable(): Promise<Release | null>;
   /** Each time a check (after the start, then daily) has its answer. */
@@ -44,6 +54,8 @@ export interface Api {
   openRelease(): Promise<void>;
   /** Simulated FIBER only: the next FIBER ("Set up another FIBER"). */
   nextBoard?(): void;
+  /** Simulated FIBER only: the step that is open, so that "RESET" is pressed on the Start step. */
+  atStep?(step: string): void;
 }
 
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -68,7 +80,7 @@ async function tauriApi(): Promise<Api> {
     accessStatus: () => invoke("access_status"),
     accessInstall: () => invoke("access_install"),
     usbBoards: () => invoke("usb_boards"),
-    flashStart: (settings, port) => invoke("flash_start", { settings, port }),
+    flashStart: (settings, devices, together, prompt) => invoke("flash_start", { settings, devices, together, prompt }),
     cancel: () => invoke("cancel"),
     findDevice: (hostname) => invoke("find_device", { hostname }),
     openLink: (url) => invoke("open_link", { url }),
@@ -78,17 +90,28 @@ async function tauriApi(): Promise<Api> {
       await writeText(text);
     },
     onImage: (cb, done) => pair<Prepared>("image", cb, done),
-    onFlash: (cb, done) => pair<FlashReport>("flash", cb, done),
+    onFlash: async (cb, done, finished) => {
+      const a = await listen<{ port: string; event: JobEvent }>("flash-event", (e) => cb(e.payload.port, e.payload.event));
+      const b = await listen<Done<FlashReport> & { port: string }>("flash-done", (e) => done(e.payload.port, e.payload));
+      const c = await listen("flash-finished", () => finished());
+      return () => {
+        a();
+        b();
+        c();
+      };
+    },
     updateAvailable: () => invoke("update_available"),
     onUpdate: (cb) => listen<Release | null>("update-available", (e) => cb(e.payload)),
     openRelease: () => invoke("open_release"),
   };
 }
 
-/** A FIBER that appears on USB a few seconds after the Connect step opens, stays in USB mode for a
+/** A FIBER that appears on USB a few seconds after the Connect step opens, stays in boot mode for a
  * few seconds after writing (until "RESET") and is found on the network on the third look.
  * `openLink` and `copyText` are the app's own in demo mode (the browser's in a plain browser).
- * With `?update=available` in the address, a newer version of FIBER Setup is out. */
+ * In the address: `?boards=4` for that many FIBERs (up to 9, one more than can be written at
+ * once), `?fail=1-2` for a FIBER whose first write fails, `?update=available` for a newer version
+ * of FIBER Setup. */
 function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (text: string) => Promise<void>): Api {
   const image = {
     id: "raspios-lite-arm64-2026-10-06",
@@ -107,12 +130,24 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
     name: `${image.name} (${image.version})`,
   };
   let imageCbs: [(e: JobEvent) => void, (d: Done<Prepared>) => void] | null = null;
-  let flashCbs: [(e: JobEvent) => void, (d: Done<FlashReport>) => void] | null = null;
+  let flashCbs:
+    | [(port: string, e: JobEvent) => void, (port: string, d: Done<FlashReport>) => void, () => void]
+    | null = null;
   let access = false;
+  const query = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
+  const count = Math.min(9, Math.max(1, Number(query.get("boards")) || 1));
+  const PORTS = count === 1 ? ["3-2"] : ["1-1", "1-2", "1-3", "1-4", "2-1", "2-2", "2-3", "2-4", "3-1"].slice(0, count);
+  const serialOf = (port: string) =>
+    count === 1 ? "10000000a1b2c3d4" : `10000000a1b2${port.replace(/\D/g, "").padStart(4, "0")}`;
+  /** The FIBER whose first write fails, and whether it has failed already. */
+  const failing = query.get("fail");
+  let failed = false;
   let boardsAsked = 0;
-  /** Polls since the write finished; null before. */
-  let afterWrite: number | null = null;
-  let searches = 0;
+  /** Looks on the Start step since each port was written. */
+  const written = new Map<string, number>();
+  let step = "";
+  /** How often each name was looked for on the network. */
+  const searches = new Map<string, number>();
   let cancelled = false;
   const appInfo = async (): Promise<AppInfo> => ({
     version: "1.1.0",
@@ -126,7 +161,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
       timezone: "Europe/Prague",
       ssh_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey user@laptop",
       ssh_key_path: "~/.ssh/id_ed25519.pub",
-      language: navigator.language.startsWith("cs") ? "cs" : "en",
+      language: langOf(navigator.language),
     },
   });
   /** `?update=available`: the version after this one is out. */
@@ -175,59 +210,95 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
       return { rules_installed: true, pkexec: true };
     },
     usbBoards: async () => {
-      if (afterWrite !== null) {
-        afterWrite++;
-        return afterWrite <= 5
-          ? [{ port: "3-2", kind: "gadget", product_id: "0104", serial: "10000000a1b2c3d4" }]
-          : [];
-      }
       boardsAsked++;
-      return boardsAsked > 3 ? [{ port: "3-2", kind: "boot", product_id: "2711", serial: null }] : [];
+      return PORTS.flatMap((port, i): UsbBoard[] => {
+        const since = written.get(port);
+        if (since === undefined) {
+          // They come up one after another, as they are plugged in.
+          return boardsAsked > 3 + i ? [{ port, kind: "boot", product_id: "2711", serial: null }] : [];
+        }
+        // Written: its memory stays a disk until "RESET", pressed on the Start step, one FIBER
+        // after another.
+        if (step === "restart") written.set(port, since + 1);
+        return since <= 4 + i ? [{ port, kind: "gadget", product_id: "0104", serial: serialOf(port) }] : [];
+      });
     },
-    flashStart: async (settings) => {
+    flashStart: async (settings, devices, together) => {
       cancelled = false;
-      const [cb, done] = flashCbs ?? [() => {}, () => {}];
-      const log = (line: string) => cb({ type: "log", line });
-      cb({ type: "phase", phase: "boot" });
-      for (const line of ["Waiting for the FIBER on USB port 3-2", "Sending bootcode4.bin", "File read: boot.img", "Second stage boot server done"]) {
-        await new Promise((r) => setTimeout(r, 500));
-        log(line);
-      }
-      cb({ type: "phase", phase: "wait_disk" });
-      await new Promise((r) => setTimeout(r, 1200));
-      log("eMMC /dev/sdb (7.8 GB) on USB port 3-2, CM4 serial 10000000a1b2c3d4");
-      cb({ type: "phase", phase: "settings" });
-      log(`Settings written for ${settings.install_fiber ? "fiber-a1b2c3d4" : settings.hostname} (instance fiber-setup-1793820007-22517e79)`);
-      run(cb, [
-        { phase: "write", total: prepared.size, ms: 5000 },
-        { phase: "verify", total: prepared.size, ms: 2500 },
-      ])
-        .then(() => {
-          afterWrite = 0;
-          cb({ type: "phase", phase: "done" });
-          done({
-            ok: true,
-            result: {
-              disk: "/dev/sdb",
-              disk_size: 7_818_182_656,
-              serial: "10000000a1b2c3d4",
-              hub_name: "fiber-a1b2c3d4",
-              hostname: settings.install_fiber ? "fiber-a1b2c3d4" : settings.hostname,
-              written: prepared.size,
-              instance_id: "fiber-setup-1793820007-22517e79",
-              seconds: 214,
-            },
-            error: null,
-          });
-        })
-        .catch((e) => done({ ok: false, result: null, error: String(e.message ?? e) }));
+      const [cb, done, finished] = flashCbs ?? [() => {}, () => {}, () => {}];
+      const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const nameOf = (d: FlashDevice) =>
+        settings.install_fiber ? `fiber-${serialOf(d.port).slice(-8)}` : (d.hostname ?? settings.hostname);
+      /** Started over USB, its memory found: as the app does it, for all of them at once. */
+      const start = async (d: FlashDevice) => {
+        const log = (line: string) => cb(d.port, { type: "log", line });
+        cb(d.port, { type: "phase", phase: "boot" });
+        for (const line of [`Waiting for the FIBER on USB port ${d.port}`, "Sending bootcode4.bin", "File read: boot.img", "Second stage boot server done"]) {
+          await pause(500);
+          if (cancelled) throw new Error("cancelled");
+          log(line);
+        }
+        cb(d.port, { type: "phase", phase: "wait_disk" });
+        await pause(1200);
+        if (d.port === failing && !failed) {
+          failed = true;
+          throw new Error(`the FIBER's eMMC did not appear on USB port ${d.port} (check the cable, then try again)`);
+        }
+        log(`eMMC /dev/sd${String.fromCharCode(98 + PORTS.indexOf(d.port))} (7.8 GB) on USB port ${d.port}, CM4 serial ${serialOf(d.port)}`);
+        cb(d.port, { type: "phase", phase: "ready" });
+      };
+      const write = async (d: FlashDevice) => {
+        cb(d.port, { type: "phase", phase: "settings" });
+        cb(d.port, { type: "log", line: `Settings written for ${nameOf(d)} (instance fiber-setup-1793820007-22517e79)` });
+        await run((e) => cb(d.port, e), [
+          { phase: "write", total: prepared.size, ms: 5000 },
+          { phase: "verify", total: prepared.size, ms: 2500 },
+        ]);
+        written.set(d.port, 0);
+        cb(d.port, { type: "phase", phase: "done" });
+        done(d.port, {
+          ok: true,
+          result: {
+            disk: `/dev/sd${String.fromCharCode(98 + PORTS.indexOf(d.port))}`,
+            disk_size: 7_818_182_656,
+            serial: serialOf(d.port),
+            hub_name: `fiber-${serialOf(d.port).slice(-8)}`,
+            hostname: nameOf(d),
+            written: prepared.size,
+            instance_id: "fiber-setup-1793820007-22517e79",
+            seconds: 214,
+          },
+          error: null,
+        });
+      };
+      const guarded = (job: (d: FlashDevice) => Promise<void>) => async (d: FlashDevice) => {
+        try {
+          await job(d);
+          return true;
+        } catch (e) {
+          done(d.port, { ok: false, result: null, error: String((e as Error).message ?? e) });
+          return false;
+        }
+      };
+      (async () => {
+        const started = await Promise.all(devices.map(guarded(start)));
+        const ready = devices.filter((_, i) => started[i]);
+        if (together) await Promise.all(ready.map(guarded(write)));
+        else for (const d of ready) await guarded(write)(d);
+        finished();
+      })();
     },
     cancel: async () => {
       cancelled = true;
     },
-    findDevice: async () => {
+    findDevice: async (hostname) => {
       await new Promise((r) => setTimeout(r, 900));
-      return ++searches >= 3 ? { ip: "192.168.1.57", ssh: true } : null;
+      // Each on its third look, at an address of its own.
+      if (!searches.has(hostname)) searches.set(hostname, 0);
+      const looks = (searches.get(hostname) ?? 0) + 1;
+      searches.set(hostname, looks);
+      const index = [...searches.keys()].indexOf(hostname);
+      return looks >= 3 + index ? { ip: `192.168.1.${57 + index}`, ssh: true } : null;
     },
     openLink:
       openLink ??
@@ -239,8 +310,8 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
       imageCbs = [cb, done];
       return () => (imageCbs = null);
     },
-    onFlash: async (cb, done) => {
-      flashCbs = [cb, done];
+    onFlash: async (cb, done, finished) => {
+      flashCbs = [cb, done, finished];
       return () => (flashCbs = null);
     },
     updateAvailable: update,
@@ -251,8 +322,12 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
     },
     nextBoard: () => {
       boardsAsked = 0;
-      afterWrite = null;
-      searches = 0;
+      written.clear();
+      searches.clear();
+      failed = false;
+    },
+    atStep: (open) => {
+      step = open;
     },
   };
 }

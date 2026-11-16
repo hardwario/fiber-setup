@@ -1,34 +1,64 @@
 <script lang="ts">
   import CopyCommand from "../lib/components/CopyCommand.svelte";
   import Icon from "../lib/components/Icon.svelte";
-  import { t } from "../lib/i18n/index.svelte";
+  import { fill, t } from "../lib/i18n/index.svelte";
   import { wizard } from "../lib/wizard.svelte";
 
   const f = $derived(wizard.written ?? wizard.form);
-  // The name it was written with: fiber-<serial> with the FIBER software.
-  const name = $derived(wizard.found?.name ?? f.hostname);
+  // The names they were written with: fiber-<serial> with the FIBER software.
+  const names = $derived(wizard.names);
+  // One FIBER: also by its address, when it was found.
+  const found = $derived(names.length === 1 ? wizard.found[names[0]] : undefined);
+  // The password it asks for: hidden until the user wants to see it, whatever its length.
+  let shown = $state(false);
 </script>
 
 <section class="card pad">
   <h2><Icon name="terminal" size={16} /> {t().done.loginTitle}</h2>
   <p class="muted">{t().done.loginHint}</p>
-  <CopyCommand text={`ssh ${f.username}@${name}.local`} />
-  {#if wizard.found}
+  {#each names as name (name)}
+    <CopyCommand text={`ssh ${f.username}@${name}.local`} />
+  {/each}
+  {#if found}
     <p class="muted">{t().done.loginIp}</p>
-    <CopyCommand text={`ssh ${f.username}@${wizard.found.ip}`} />
+    <CopyCommand text={`ssh ${f.username}@${found.ip}`} />
   {/if}
+  <!-- What it asks for then: the login from the settings. -->
+  <div class="login">
+    <div class="row">
+      <Icon name="user" size={15} /><span class="k">{t().settings.user}</span><span class="mono">{f.username}</span>
+    </div>
+    <div class="row">
+      <Icon name="lock" size={15} /><span class="k">{t().settings.password}</span>
+      <span class="secret">
+        <span class="mono">{shown ? f.password : "••••••••"}</span>
+        <button
+          class="eye"
+          type="button"
+          aria-pressed={shown}
+          aria-label={shown ? t().common.hidePassword : t().common.showPassword}
+          title={shown ? t().common.hidePassword : t().common.showPassword}
+          onclick={() => (shown = !shown)}
+        >
+          <Icon name={shown ? "eye-off" : "eye"} size={16} />
+        </button>
+      </span>
+    </div>
+  </div>
 </section>
 
 <section class="card pad summary">
   <div class="row">
-    <Icon name="monitor" size={15} /><span class="k">{t().done.name}</span><span class="mono">{name}.local</span>
+    <Icon name="monitor" size={15} /><span class="k">{t().done.name}</span><span class="mono"
+      >{names.map((n) => `${n}.local`).join(", ")}</span
+    >
   </div>
   <div class="row">
     <Icon name={f.network === "wifi" ? "wifi" : f.network === "phone" ? "phone" : "ethernet"} size={15} /><span class="k"
       >{t().done.network}</span
     ><span
-      >{f.network === "wifi" ? `${t().settings.wifi}: ${f.ssid}` : f.network === "phone" ? t().settings.phone : t().settings.ethernet}{wizard.found
-        ? ` · ${wizard.found.ip}`
+      >{f.network === "wifi" ? fill(t().settings.wifiSummary, { ssid: f.ssid }) : f.network === "phone" ? t().settings.phone : t().settings.noneSummary}{found
+        ? ` · ${found.ip}`
         : ""}</span
     >
   </div>
@@ -71,6 +101,41 @@
   .row > span:last-child {
     flex: 1 1 200px;
     min-width: 0;
+  }
+  .login {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 4px;
+  }
+  .login .k {
+    flex-basis: 150px;
+  }
+  .secret {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .eye {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .eye:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .eye :global(svg) {
+    margin-top: 0;
   }
   .actions {
     display: flex;

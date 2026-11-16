@@ -1,11 +1,11 @@
 <script lang="ts">
-  /** Numbered instructions for the hands-on steps, one under the other on a line; the photo that
-   * goes with a step sits right under its text. */
-  import { t } from "../i18n/index.svelte";
-  import Photo from "./Photo.svelte";
+  /** Numbered instructions for the hands-on steps, one under the other on a line; the picture
+   * that goes with a step sits right under its text. */
+  import Picture from "./Picture.svelte";
+  import Text from "./Text.svelte";
 
-  type Shot = { src: string; caption: string };
-  let { items, photos = {} }: { items: string[]; photos?: Record<number, Shot> } = $props();
+  type Shot = { src: string; dark?: string; alt: string };
+  let { items, pictures = {} }: { items: string[]; pictures?: Record<number, Shot> } = $props();
 </script>
 
 <ol class="steps">
@@ -13,9 +13,9 @@
     <li>
       <span class="n">{i + 1}</span>
       <div class="body">
-        <p>{item}</p>
-        {#if photos[i]}
-          <Photo src={photos[i].src} alt={t().common.photo} caption={photos[i].caption} />
+        <p><Text value={item} /></p>
+        {#if pictures[i]}
+          <Picture src={pictures[i].src} dark={pictures[i].dark} alt={pictures[i].alt} />
         {/if}
       </div>
     </li>
@@ -77,7 +77,7 @@
   p {
     margin: 0;
   }
-  .body :global(.photo) {
+  .body :global(.picture) {
     max-width: 520px;
     padding-bottom: 4px;
   }

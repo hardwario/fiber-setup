@@ -147,13 +147,19 @@ pub fn free_for_writing(dev: &BlockDevice) -> Result<()> {
     }
 }
 
-/// What goes where: the raw image, with the boot partition's bytes replaced by the personalised
-/// copy.
+/// Bytes that go over the image's own, from `offset` in the image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Patch {
+    pub offset: u64,
+    pub bytes: Vec<u8>,
+}
+
+/// What goes where: the raw image, with the parts of its boot partition that the settings
+/// changed laid over it.
 pub struct Source<'a> {
     pub raw: &'a Path,
     pub size: u64,
-    pub patch_offset: u64,
-    pub patch: &'a [u8],
+    pub patches: &'a [Patch],
 }
 
 impl Source<'_> {
@@ -161,13 +167,15 @@ impl Source<'_> {
     fn read_at(&self, file: &mut File, offset: u64, buf: &mut [u8]) -> Result<()> {
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(buf).with_context(|| format!("reading the image at {offset}"))?;
-        let start = offset.max(self.patch_offset);
-        let end = (offset + buf.len() as u64).min(self.patch_offset + self.patch.len() as u64);
-        if start < end {
-            let b = (start - offset) as usize;
-            let p = (start - self.patch_offset) as usize;
-            let len = (end - start) as usize;
-            buf[b..b + len].copy_from_slice(&self.patch[p..p + len]);
+        for patch in self.patches {
+            let start = offset.max(patch.offset);
+            let end = (offset + buf.len() as u64).min(patch.offset + patch.bytes.len() as u64);
+            if start < end {
+                let b = (start - offset) as usize;
+                let p = (start - patch.offset) as usize;
+                let len = (end - start) as usize;
+                buf[b..b + len].copy_from_slice(&patch.bytes[p..p + len]);
+            }
         }
         Ok(())
     }
@@ -401,6 +409,38 @@ pub fn write_and_verify(src: &Source<'_>, target: &Target, events: Sink<'_>, can
     verify(src, target, events, cancel)
 }
 
+/// Opens several eMMCs for writing (and, on macOS and Windows, for reading back): one result
+/// for each path, in their order. macOS asks for the password once for all of them.
+pub fn open_devices(paths: &[PathBuf]) -> Vec<Result<File>> {
+    #[cfg(target_os = "macos")]
+    return crate::macos::open_disks(paths);
+    #[cfg(not(target_os = "macos"))]
+    paths.iter().map(|p| open_device(p)).collect()
+}
+
+/// [`write_and_verify`] onto a target that is open for writing already ([`open_devices`]): a
+/// batch opens all its disks first, so that macOS asks once and not again for every FIBER,
+/// minutes apart.
+pub fn write_and_verify_open(
+    src: &Source<'_>,
+    target: &Target,
+    mut out: File,
+    events: Sink<'_>,
+    cancel: &Cancel,
+) -> Result<()> {
+    events(Event::Phase { phase: Phase::Write });
+    let mut input = File::open(src.raw).with_context(|| format!("opening {}", src.raw.display()))?;
+    write_to(src, &mut input, &mut out, target.path(), events, cancel)?;
+    #[cfg(any(target_os = "macos", windows))]
+    if let Target::Device(p) = target {
+        events(Event::Phase { phase: Phase::Verify });
+        out.seek(SeekFrom::Start(0))?;
+        return verify_from(src, &mut out, p, events, cancel);
+    }
+    drop(out);
+    verify(src, target, events, cancel)
+}
+
 fn verify_from(src: &Source<'_>, disk: &mut File, path: &Path, events: Sink<'_>, cancel: &Cancel) -> Result<()> {
     let mut input = File::open(src.raw)?;
     let mut expected = vec![0u8; CHUNK];
@@ -444,7 +484,7 @@ mod tests {
         let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
         std::fs::write(&raw, &data).unwrap();
         let patch = vec![0xAAu8; 10_000];
-        let src = Source { raw: &raw, size, patch_offset: CHUNK as u64 - 5000, patch: &patch };
+        let src = Source { raw: &raw, size, patches: &[Patch { offset: CHUNK as u64 - 5000, bytes: patch.clone() }] };
         let target = Target::File(t.path().join("out.img"));
         let noop = |_e: Event| {};
         write(&src, &target, &noop, &Cancel::new()).unwrap();
@@ -497,7 +537,7 @@ mod tests {
         let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
         std::fs::write(&image, &data).unwrap();
         let patch = vec![0xAAu8; 10_000];
-        let src = Source { raw: &image, size, patch_offset: CHUNK as u64 - 5000, patch: &patch };
+        let src = Source { raw: &image, size, patches: &[Patch { offset: CHUNK as u64 - 5000, bytes: patch.clone() }] };
         let noop = |_e: Event| {};
         let mut input = File::open(&image).unwrap();
         let mut disk = OpenOptions::new().read(true).write(true).open(&raw).unwrap();
@@ -589,7 +629,7 @@ mod tests {
         let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
         std::fs::write(&image, &data).unwrap();
         let patch = vec![0xAAu8; 10_000];
-        let src = Source { raw: &image, size, patch_offset: CHUNK as u64 - 5000, patch: &patch };
+        let src = Source { raw: &image, size, patches: &[Patch { offset: CHUNK as u64 - 5000, bytes: patch.clone() }] };
         let noop = |_e: Event| {};
         let path = Path::new(&emmc.path);
         let mut input = File::open(&image).unwrap();
@@ -616,7 +656,7 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let raw = t.path().join("img.raw");
         std::fs::write(&raw, vec![1u8; 8192]).unwrap();
-        let src = Source { raw: &raw, size: 8192, patch_offset: 0, patch: &[] };
+        let src = Source { raw: &raw, size: 8192, patches: &[] };
         let noop = |_e: Event| {};
         // /dev/null is a character device: refused before anything is written.
         #[cfg(unix)]
@@ -642,7 +682,11 @@ mod tests {
         // Where the patch lies: at the start, in the middle, up to the last byte, nowhere.
         for (patch_offset, patch_len) in [(0, 1000), (40_000, 20_000), (99_000, 1000), (50_000, 0)] {
             let patch = vec![0xEEu8; patch_len];
-            let src = Source { raw: &raw, size: data.len() as u64, patch_offset: patch_offset as u64, patch: &patch };
+            let src = Source {
+                raw: &raw,
+                size: data.len() as u64,
+                patches: &[Patch { offset: patch_offset as u64, bytes: patch.clone() }],
+            };
             let expected = patched(&data, patch_offset, &patch);
             // Reads before it, after it, inside it, around it, and across each of its ends.
             for (offset, len) in [
@@ -677,7 +721,11 @@ mod tests {
             let data: Vec<u8> = (0..size).map(|i| (i % 249) as u8).collect();
             std::fs::write(&raw, &data).unwrap();
             let patch = vec![0x11u8; 300];
-            let src = Source { raw: &raw, size: size as u64, patch_offset: (size - 400) as u64, patch: &patch };
+            let src = Source {
+                raw: &raw,
+                size: size as u64,
+                patches: &[Patch { offset: (size - 400) as u64, bytes: patch.clone() }],
+            };
             let target = Target::File(t.path().join("out.img"));
             // Over a longer file from an earlier write, which must not show through.
             std::fs::write(target.path(), vec![0x77u8; CHUNK * 3]).unwrap();
@@ -693,7 +741,7 @@ mod tests {
         let size = CHUNK + 8192;
         let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
         std::fs::write(&raw, &data).unwrap();
-        let src = Source { raw: &raw, size: size as u64, patch_offset: 0, patch: &[] };
+        let src = Source { raw: &raw, size: size as u64, patches: &[] };
         let target = Target::File(t.path().join("out.img"));
         let noop = |_e: Event| {};
 
@@ -729,7 +777,7 @@ mod tests {
         std::fs::write(&other, b"keep").unwrap();
         let link = t.path().join("out.img");
         std::os::unix::fs::symlink(&other, &link).unwrap();
-        let src = Source { raw: &raw, size: 8192, patch_offset: 0, patch: &[] };
+        let src = Source { raw: &raw, size: 8192, patches: &[] };
         let error = write(&src, &Target::File(link), &|_| {}, &Cancel::new()).unwrap_err().to_string();
         assert!(error.contains("not a regular file"), "{error}");
         assert_eq!(std::fs::read(&other).unwrap(), b"keep");

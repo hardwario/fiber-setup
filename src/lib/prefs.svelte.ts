@@ -1,5 +1,5 @@
 /** Theme and language: the user's choice, kept in localStorage (a per-computer convenience). */
-import { i18n, type Lang, type LanguagePref } from "./i18n/index.svelte";
+import { i18n, isLang, type Lang, type LanguagePref } from "./i18n/index.svelte";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -11,7 +11,7 @@ function load(): { theme: ThemePref; language: LanguagePref } {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "{}");
     return {
       theme: ["system", "light", "dark"].includes(v.theme) ? v.theme : "system",
-      language: ["system", "en", "cs"].includes(v.language) ? v.language : "system",
+      language: v.language === "system" || isLang(v.language) ? v.language : "system",
     };
   } catch {
     return { theme: "system", language: "system" };

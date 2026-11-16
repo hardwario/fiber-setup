@@ -291,32 +291,61 @@ fn send_boot_code(link: &mut impl Link, code: &[u8], pace: Pace) -> Result<(), L
     }
 }
 
+/// How serving the boot code's files ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Served {
+    /// The boot code has what it asked for: it said so, or left with its files read.
+    Done,
+    /// It left, or a file did not go through, before it had what it needs: it was reset, or
+    /// the link broke. It has to be started again, from its boot ROM.
+    Unserved,
+}
+
+/// What the FIBER is told to do when its boot code does not take part: only RESET brings it
+/// back to its boot ROM.
+const PRESS_RESET: &str = "it does not ask for its files; press RESET on it";
+
 /// Step 2: the files the boot code asks for, until it says it is done or leaves.
+///
+/// A boot code that says nothing is one left over from a start that broke off (the app was
+/// closed, a cable moved): it waits for the rest of a file nobody sends any more. It is waited
+/// with, and said so, until RESET takes it away; then it is [`Served::Unserved`].
 fn serve_files(
     link: &mut impl Link,
     files: &Files,
     chip: Chip,
     pace: Pace,
-    log: &dyn Fn(String),
+    note: &dyn Fn(Note),
     stop: &Cancel,
     still_there: &dyn Fn() -> bool,
-) -> Result<()> {
+) -> Result<Served> {
+    let log = &|line: String| note(Note::Line(line));
     // The file whose size was asked for last: the one the next read gets.
     let mut open: Option<Vec<u8>> = None;
+    // Files it has read, whether it has said anything at all, and whether RESET was asked for.
+    let (mut read, mut spoke, mut told) = (0, false, false);
     loop {
         stop.check()?;
         let message = match link.ask(MESSAGE) {
             Ok(message) => message,
-            // Gone to start the gadget.
-            Err(LinkError::Gone) => break,
             Err(e) => {
-                if !matches!(e, LinkError::Timeout) && !still_there() {
+                let gone = matches!(e, LinkError::Gone) || (!matches!(e, LinkError::Timeout) && !still_there());
+                // Left with files read: gone to start the gadget. Left with none: it was reset.
+                if gone && read > 0 {
                     break;
+                }
+                if gone {
+                    return Ok(Served::Unserved);
+                }
+                if !spoke && !told {
+                    note(Note::NotReady(PRESS_RESET.into()));
+                    told = true;
                 }
                 std::thread::sleep(pace.settle);
                 continue;
             }
         };
+        spoke = true;
         if message.len() != usize::from(MESSAGE) {
             bail!("the FIBER sent an incomplete request ({} bytes)", message.len());
         }
@@ -348,7 +377,10 @@ fn serve_files(
                 match &open {
                     Some(data) => {
                         let len = u32::try_from(data.len()).with_context(|| format!("{name} is too large"))?;
-                        link.announce(len).map_err(|e| anyhow!("telling the FIBER the size of {name}: {e}"))?;
+                        if let Err(e) = link.announce(len) {
+                            log(format!("Telling the FIBER the size of {name} did not go through: {e}"));
+                            return Ok(Served::Unserved);
+                        }
                     }
                     None => {
                         let _ = write(link, &[]);
@@ -359,7 +391,12 @@ fn serve_files(
             READ_FILE => match open.take() {
                 Some(data) => {
                     log(format!("File read: {name}"));
-                    write(link, &data).map_err(|e| anyhow!("sending {name} to the FIBER: {e}"))?;
+                    // Not the end: the board is waited for again, and RESET starts it anew.
+                    if let Err(e) = write(link, &data) {
+                        log(format!("Sending {name} to the FIBER did not go through: {e}"));
+                        return Ok(Served::Unserved);
+                    }
+                    read += 1;
                 }
                 None => {
                     let _ = write(link, &[]);
@@ -369,7 +406,7 @@ fn serve_files(
         }
     }
     log("Second stage boot server done".into());
-    Ok(())
+    Ok(Served::Done)
 }
 
 /// Both steps for the board on `port`, however long that takes: the caller sets the limit.
@@ -422,11 +459,21 @@ fn boot<B: Bus>(bus: &B, files: &Files, port: &str, pace: Pace, note: &dyn Fn(No
             }
         } else {
             log("Second stage boot server".into());
-            return serve_files(&mut board.link, files, chip, pace, log, stop, &|| bus.present(port));
+            if serve_files(&mut board.link, files, chip, pace, note, stop, &|| bus.present(port))? == Served::Done {
+                return Ok(());
+            }
+            // Reset, or cut off: back to waiting for it, and its boot ROM gets the boot code again.
+            log(format!("The FIBER did not get all its files; waiting for it on USB port {port} again"));
+            waiting_for.clear();
         }
         drop(board);
         std::thread::sleep(pace.settle);
     }
+}
+
+/// Whether a board waits in boot mode on `port`: in its boot ROM, or in the boot code it was sent.
+pub fn waiting(port: &str) -> bool {
+    UsbBus.present(port)
 }
 
 /// Boots the board on `port` into the gadget and returns when the board has all its files.
@@ -649,6 +696,8 @@ mod tests {
         Stall,
         /// It leaves the bus: it has all it needs.
         Leaves,
+        /// RESET is pressed: it is back in its boot ROM.
+        Reset,
     }
 
     /// What the boot ROM does once it has the boot code.
@@ -683,6 +732,8 @@ mod tests {
         denied: usize,
         /// How long an `ask` takes when the board has nothing to say.
         silence: Duration,
+        /// Files whose sending breaks off, from the next one on.
+        lost: usize,
         /// What arrived, in order: announcements and data.
         arrived: Vec<Arrived>,
         /// The boot codes the ROM was sent.
@@ -711,6 +762,7 @@ mod tests {
                 busy: 0,
                 denied: 0,
                 silence: Duration::ZERO,
+                lost: 0,
                 arrived: Vec::new(),
                 boot_codes: Vec::new(),
                 answers: Vec::new(),
@@ -781,13 +833,19 @@ mod tests {
             let mut sim = self.0.lock().unwrap();
             match sim.stage {
                 Stage::Rom => sim.arrived.push(Arrived::Data(data.to_vec())),
-                Stage::Code => match sim.answers.last_mut() {
-                    Some(answer) => {
-                        assert_eq!(answer.1 as usize, data.len(), "{}: other than announced", answer.0);
-                        answer.2 = Some(data.to_vec());
+                Stage::Code => {
+                    if sim.lost > 0 {
+                        sim.lost -= 1;
+                        return Err(LinkError::Timeout);
                     }
-                    None => panic!("data nobody asked for"),
-                },
+                    match sim.answers.last_mut() {
+                        Some(answer) => {
+                            assert_eq!(answer.1 as usize, data.len(), "{}: other than announced", answer.0);
+                            answer.2 = Some(data.to_vec());
+                        }
+                        None => panic!("data nobody asked for"),
+                    }
+                }
                 Stage::Gadget => return Err(LinkError::Gone),
             }
             Ok(())
@@ -850,6 +908,10 @@ mod tests {
                         Says::Stall => Err(LinkError::Other("endpoint stalled".into())),
                         Says::Leaves => {
                             sim.stage = Stage::Gadget;
+                            Err(LinkError::Gone)
+                        }
+                        Says::Reset => {
+                            sim.stage = Stage::Rom;
                             Err(LinkError::Gone)
                         }
                     }
@@ -1023,6 +1085,104 @@ mod tests {
                 "Second stage boot server done",
             ]
         );
+    }
+
+    /// What was seen on a desk: a FIBER left in its boot code by a start that broke off. It is
+    /// "found" like any board in boot mode, but says nothing; the app says to press RESET, and
+    /// when that is done it starts the board from its boot ROM by itself.
+    #[test]
+    fn a_board_left_in_an_earlier_start_is_started_again_after_reset() {
+        let mut sim = Sim::new(vec![
+            Says::Silence,
+            Says::Silence,
+            Says::Reset,
+            Says::Size("boot.img"),
+            Says::Read("boot.img"),
+            Says::Leaves,
+        ]);
+        sim.stage = Stage::Code;
+        let (lines, sim) = boots(sim);
+        assert_eq!(
+            lines,
+            [
+                "Waiting for the FIBER on USB port 1-1",
+                "Second stage boot server",
+                "The FIBER is not ready yet: it does not ask for its files; press RESET on it",
+                "The FIBER did not get all its files; waiting for it on USB port 1-1 again",
+                "Sending bootcode4.bin",
+                "Second stage boot server",
+                "File read: boot.img",
+                "Second stage boot server done",
+            ]
+        );
+        assert_eq!(sim.lock().unwrap().boot_codes.len(), 1);
+    }
+
+    /// A file that does not go through (a cable moved, RESET pressed in the middle) is not the
+    /// end of the write: the board is waited for, and started again when it is back.
+    #[test]
+    fn a_file_that_does_not_go_through_is_sent_again_after_reset() {
+        let mut sim = Sim::new(vec![
+            Says::Size("boot.img"),
+            Says::Read("boot.img"),
+            // Its boot code now waits for the rest of the file, and says nothing.
+            Says::Silence,
+            Says::Reset,
+            Says::Size("boot.img"),
+            Says::Read("boot.img"),
+            Says::Done,
+        ]);
+        sim.lost = 1;
+        let (lines, sim) = boots(sim);
+        assert_eq!(
+            lines,
+            [
+                "Waiting for the FIBER on USB port 1-1",
+                "Sending bootcode4.bin",
+                "Second stage boot server",
+                "File read: boot.img",
+                "Sending boot.img to the FIBER did not go through: no answer in time",
+                "The FIBER did not get all its files; waiting for it on USB port 1-1 again",
+                "Second stage boot server",
+                "The FIBER is not ready yet: it does not ask for its files; press RESET on it",
+                "The FIBER did not get all its files; waiting for it on USB port 1-1 again",
+                "Sending bootcode4.bin",
+                "Second stage boot server",
+                "File read: boot.img",
+                "Second stage boot server done",
+            ]
+        );
+        assert_eq!(sim.lock().unwrap().boot_codes.len(), 2);
+        // The whole file arrived the second time.
+        assert_eq!(answers(&sim).last().unwrap().2.as_ref().map(Vec::len), Some(100_000));
+    }
+
+    /// Without RESET such a board ends the wait with the advice to press it.
+    #[test]
+    fn says_to_press_reset_when_the_boot_code_stays_silent() {
+        let mut sim = Sim::new(vec![Says::Silence; 200]);
+        sim.stage = Stage::Code;
+        sim.silence = Duration::from_millis(20);
+        let dir = gadget();
+        let (result, _, _) = start(sim, dir.path(), Duration::from_secs(1), &Cancel::new());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "the FIBER on USB port 1-1 could not be started within 1 s (it does not ask for its files; press RESET on it); press RESET and try again"
+        );
+    }
+
+    /// A board that leaves before it read a file was reset, not started: no gadget comes of it.
+    #[test]
+    fn a_board_that_leaves_before_it_read_a_file_is_not_taken_for_started() {
+        let dir = gadget();
+        let (result, lines, _) = start(
+            Sim::new(vec![Says::Size("boot.img"), Says::Leaves]),
+            dir.path(),
+            Duration::from_secs(1),
+            &Cancel::new(),
+        );
+        assert!(result.is_err());
+        assert!(!lines.contains(&"Second stage boot server done".to_string()), "{lines:#?}");
     }
 
     #[test]

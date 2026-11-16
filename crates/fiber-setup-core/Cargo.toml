@@ -29,6 +29,7 @@ libc = "0.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = { version = "1", default-features = false }
 rustix = { version = "1", features = ["fs", "net"] }
+security-framework = "3"
 
 [dev-dependencies]
 tempfile.workspace = true

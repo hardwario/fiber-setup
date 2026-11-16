@@ -1,8 +1,8 @@
 //! Update notices in the window. A moment after the start, and once a day for as long as the
 //! app stays open, it asks GitHub for the newest published release
 //! (`fiber_setup_core::update`). A newer one is offered on the Welcome page and under the step
-//! list; nothing is downloaded or installed. TOWER Bridge does the same, with a tray item and a
-//! notification that an app with one window, open for one job, has no use for.
+//! list; nothing is downloaded or installed. No tray item and no notification either: an app
+//! with one window, open for one job, has no use for them.
 
 use fiber_setup_core::update::{self, CheckError, Release};
 use std::sync::{Arc, Mutex};

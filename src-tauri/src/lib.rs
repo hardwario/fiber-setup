@@ -124,6 +124,9 @@ fn system_locale() -> Option<String> {
     None
 }
 
+/// The languages the window has texts in (src/lib/i18n); any other system language gets English.
+const LANGUAGES: [&str; 5] = ["en", "cs", "de", "sk", "pl"];
+
 /// `cs_CZ.UTF-8` -> (`cs`, `CZ`).
 fn locale() -> (String, Option<String>) {
     let env = || ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
@@ -133,7 +136,7 @@ fn locale() -> (String, Option<String>) {
     let lang = parts.next().unwrap_or("en").to_lowercase();
     let region =
         parts.next().map(|r| r.to_uppercase()).filter(|r| r.len() == 2 && r.bytes().all(|b| b.is_ascii_uppercase()));
-    (if lang == "cs" { "cs".into() } else { "en".into() }, region)
+    (if LANGUAGES.contains(&lang.as_str()) { lang } else { "en".into() }, region)
 }
 
 /// The computer's time zone: `/etc/timezone`, or the target of `/etc/localtime` (macOS too).
@@ -259,26 +262,66 @@ async fn access_install(app: AppHandle) -> Result<access::Status, String> {
     .map_err(|e| e.to_string())?
 }
 
-#[tauri::command]
+/// Asked every second while the wizard waits for a board: off the main thread, which draws the
+/// window.
+#[tauri::command(async)]
 fn usb_boards() -> Vec<usb::UsbBoard> {
     usb::boards()
 }
 
-/// Writes the FIBER on `port` on a thread: `flash-event` while it works, `flash-done` at the end.
+/// What happens to the FIBER on one USB port of a batch.
+#[derive(Serialize, Clone)]
+struct OnPort<T: Serialize> {
+    port: String,
+    #[serde(flatten)]
+    what: T,
+}
+
+/// An event of a write, named: `OnPort` lays it beside the port.
+#[derive(Serialize, Clone)]
+struct Happened {
+    event: Event,
+}
+
+/// Writes the FIBERs on the USB ports of `devices` on a thread, all at once (`together`) or one
+/// after another. For each: `flash-event` while it works and `flash-done` when it is through;
+/// `flash-finished` when all are. `prompt` is the app's sentence for macOS's password dialog, in
+/// the user's language.
 #[tauri::command]
-fn flash_start(app: AppHandle, state: State<'_, AppState>, settings: Settings, port: String) -> Result<(), String> {
+fn flash_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+    devices: Vec<flash::Device>,
+    together: bool,
+    prompt: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    fiber_setup_core::macos::set_password_prompt(&prompt);
+    #[cfg(not(target_os = "macos"))]
+    let _ = prompt;
     settings.validate().map_err(|e| format!("{e:#}"))?;
+    if devices.is_empty() {
+        return Err("no FIBER was chosen".into());
+    }
+    if devices.len() > flash::MAX_DEVICES {
+        return Err(format!("at most {} FIBERs can be written at once", flash::MAX_DEVICES));
+    }
     let image = state.prepared().ok_or("the image is not ready yet")?;
     let tools = tools(&app).ok_or("the files that start a FIBER over USB are missing from this installation")?;
     state.start()?;
     std::thread::spawn(move || {
         let state = app.state::<AppState>();
-        let emit = |e: Event| {
-            let _ = app.emit("flash-event", e);
+        let order = if together { flash::Order::Together } else { flash::Order::OneByOne };
+        let events = |port: &str, event: Event| {
+            let _ = app.emit("flash-event", OnPort { port: port.to_string(), what: Happened { event } });
         };
-        let r = flash::run(&tools, &image, &settings, &port, &emit, &state.cancel);
+        let finished = |port: &str, r: anyhow::Result<flash::Report>| {
+            let _ = app.emit("flash-done", OnPort { port: port.to_string(), what: done(r) });
+        };
+        flash::run_many(&tools, &image, &settings, &devices, order, &events, &finished, &state.cancel);
         state.busy.store(false, Ordering::SeqCst);
-        let _ = app.emit("flash-done", done(r));
+        let _ = app.emit("flash-finished", ());
     });
     Ok(())
 }
@@ -355,7 +398,7 @@ fn demo_mode() -> bool {
     demo()
 }
 
-/// Everything in the window a quarter larger than tower-bridge's sizes (Marek, 2026-11-04:
+/// Everything in the window a quarter larger than the sizes its styles give (Marek, 2026-11-04:
 /// "everything needs to be bigger").
 const ZOOM: f64 = 1.25;
 

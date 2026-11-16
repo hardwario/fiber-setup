@@ -1,3 +1,4 @@
+import { LANGUAGES } from "./i18n/index.svelte";
 import type { Choice } from "./search";
 
 /**
@@ -32,7 +33,7 @@ export function countryChoices(locale: string): Choice[] {
   const local = names(locale);
   // Every app language finds a country, whatever language the app shows (typing "Německo" in the
   // English app too).
-  const others = ["en", "cs"].map(names);
+  const others = LANGUAGES.map((l) => names(l.code));
   return COUNTRY_CODES.map((code) => {
     const name = local?.of(code) ?? code;
     const keywords = [...others.map((n) => n?.of(code) ?? ""), code].join(" ");

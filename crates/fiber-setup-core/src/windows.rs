@@ -19,6 +19,8 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 /// No console window flashing up behind the app for each tool it starts.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -342,12 +344,22 @@ pub fn regional() -> Regional {
         .unwrap_or_default()
 }
 
+/// When the driver store was last found without our driver. The wizard asks every second while
+/// it waits for a board, and each look at the store starts a program that lists every driver
+/// package: "not yet" stands for [`NOT_YET`], unless the driver was installed since.
+static NOT_FOUND_AT: Mutex<Option<Instant>> = Mutex::new(None);
+const NOT_YET: Duration = Duration::from_secs(5);
+
 /// Whether the driver package for the boot ROM is in Windows' driver store. Once it is, it
-/// stays; before that it is looked for each time.
+/// stays; before that it is looked for again every few seconds.
 pub fn driver_installed() -> bool {
     static INSTALLED: AtomicBool = AtomicBool::new(false);
     if INSTALLED.load(Ordering::Relaxed) {
         return true;
+    }
+    let mut not_found_at = NOT_FOUND_AT.lock().unwrap_or_else(PoisonError::into_inner);
+    if not_found_at.is_some_and(|at| at.elapsed() < NOT_YET) {
+        return false;
     }
     // The list's labels are in Windows' language; the file name is not.
     let found = hidden(&system_tool("pnputil.exe"))
@@ -357,6 +369,7 @@ pub fn driver_installed() -> bool {
     if found {
         INSTALLED.store(true, Ordering::Relaxed);
     }
+    *not_found_at = (!found).then(Instant::now);
     found
 }
 
@@ -372,6 +385,8 @@ pub fn install_driver(inf: &Path) -> Result<()> {
         .arg("/install")
         .output()
         .context("starting pnputil")?;
+    // Whatever came of it, the next question about the driver looks at the store itself.
+    *NOT_FOUND_AT.lock().unwrap_or_else(PoisonError::into_inner) = None;
     match out.status.code() {
         // Done; done, with no board connected to install it on; done, wants a restart.
         Some(0) | Some(259) | Some(3010) => Ok(()),

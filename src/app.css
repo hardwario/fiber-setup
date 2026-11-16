@@ -332,6 +332,20 @@ code,
   font-size: 12.5px;
 }
 
+/* A name that stands on the FIBER itself (BOOT, RESET, EEWP…), inside a sentence: set like a
+   label, in the colour of the text around it, so it works in a note of any tone. */
+.onboard {
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  font-family: var(--mono);
+  font-size: 0.86em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

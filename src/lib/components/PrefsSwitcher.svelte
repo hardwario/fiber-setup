@@ -1,6 +1,6 @@
 <script lang="ts">
-  /** Theme and language for the sidebar, in one row under the steps (tower-bridge's controls, made
-   * compact so the step flow fits). */
+  /** Theme and language for the sidebar, in one row under the steps (compact, so the step flow
+   * fits). */
   import { LANGUAGES, type LanguagePref, fill, languageName, t } from "../i18n/index.svelte";
   import { prefs, type ThemePref } from "../prefs.svelte";
   import Icon from "./Icon.svelte";

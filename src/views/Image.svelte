@@ -22,10 +22,9 @@
           <div class="name">{info.image.name} ({info.image.version})</div>
         {/if}
       </div>
+      <!-- While it is being got ready, the line below says how far it is. -->
       {#if img.result && !img.busy}
         <span class="pill good"><Icon name="circle-check" size={14} /> {t().image.ready}</span>
-      {:else if img.busy}
-        <span class="pill"><Icon name="loader" size={14} /> {t().image.preparing}</span>
       {/if}
     </div>
     {#if img.result}

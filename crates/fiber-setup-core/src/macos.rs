@@ -1,9 +1,13 @@
 //! macOS: what sysfs, udev and `/proc/mounts` give on Linux.
 //!
 //! USB boards and the disks behind them come from the I/O Registry (`ioreg`, one call for both).
-//! A disk is written through its raw device (`/dev/rdiskN`), which only root may open: macOS asks
-//! for the password (`authopen`) and hands the open disk over, so nothing in this app runs as
-//! root. macOS mounts every disk it sees, so the FIBER's volumes are unmounted before writing
+//! That call is heavy (it prints every USB device with all it carries: megabytes on a desk with
+//! a dock), so the question the wizard asks every second, "is a board there?", goes to the USB
+//! devices themselves first ([`boards`]), and to the registry only when a disk decides.
+//! A disk is written through its raw device (`/dev/rdiskN`), which only root may open: the app
+//! asks macOS for the right to open that one disk (the password or Touch ID dialog, in the app's
+//! name), and macOS's `authopen` opens it with that right and hands the open disk over, so
+//! nothing in this app runs as root. macOS mounts every disk it sees, so the FIBER's volumes are unmounted before writing
 //! (waiting until macOS has let go of the disk) and the disk is ejected after.
 
 use crate::disk::BlockDevice;
@@ -18,6 +22,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 const IOREG: &str = "/usr/sbin/ioreg";
@@ -224,9 +229,22 @@ fn is_cm4_unit(vendor: &str, model: &str) -> bool {
     v.starts_with("mmcblk") || (v.starts_with("rpi-msd") && model.starts_with("0001"))
 }
 
-/// The disks behind USB devices, as [`crate::disk::list`] gives them.
+/// The disks behind USB devices, as [`crate::disk::list`] gives them. A batch has every FIBER
+/// of it asking twice a second while its memory comes up, and the registry takes a fifth of a
+/// second each time: an answer that young serves them all. (The checks before a disk is opened
+/// read the registry themselves.)
 pub fn disks() -> Result<Vec<BlockDevice>> {
-    Ok(disks_of(&usb_devices()?))
+    static LAST: Mutex<Option<(Instant, Vec<BlockDevice>)>> = Mutex::new(None);
+    const YOUNG: Duration = Duration::from_millis(300);
+    let mut last = LAST.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((at, disks)) = last.as_ref()
+        && at.elapsed() < YOUNG
+    {
+        return Ok(disks.clone());
+    }
+    let disks = disks_of(&usb_devices()?);
+    *last = Some((Instant::now(), disks.clone()));
+    Ok(disks)
 }
 
 pub fn disks_of(devices: &[UsbDevice]) -> Vec<BlockDevice> {
@@ -236,9 +254,99 @@ pub fn disks_of(devices: &[UsbDevice]) -> Vec<BlockDevice> {
     out
 }
 
-/// The boards on USB, as [`crate::usb::boards`] gives them.
+/// A USB device as a look at the devices themselves gives it: cheap (well under a millisecond
+/// for all of them, where the registry takes a fifth of a second), but without the disks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Seen {
+    /// The I/O Registry's number for this connection: a new one each time it is plugged in.
+    entry: u64,
+    vendor_id: u16,
+    product_id: u16,
+    location_id: u32,
+    serial: Option<String>,
+}
+
+fn seen() -> Option<Vec<Seen>> {
+    use nusb::MaybeFuture;
+    let devices = nusb::list_devices().wait().ok()?;
+    Some(
+        devices
+            .map(|d| Seen {
+                entry: d.registry_entry_id(),
+                vendor_id: d.vendor_id(),
+                product_id: d.product_id(),
+                location_id: d.location_id(),
+                serial: d.serial_number().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            })
+            .collect(),
+    )
+}
+
+/// How long "this Broadcom device is no board" stands before the registry is asked again: a
+/// gadget's disk shows up a moment after the gadget itself.
+const ASK_AGAIN: Duration = Duration::from_secs(2);
+
+/// What the registry said about the Broadcom devices that are no boot ROM, kept for as long as
+/// the same ones are connected.
+struct Asked {
+    /// Their connections ([`Seen::entry`]), in order.
+    about: Vec<u64>,
+    at: Instant,
+    gadgets: Vec<UsbBoard>,
+}
+
+/// Answers "which boards are on USB?" from a look at the devices, asking the registry only when
+/// it must: a boot ROM is known by its ids alone, and only a Broadcom device that is none needs
+/// its disk looked at, once per connection.
+struct Look {
+    asked: Option<Asked>,
+}
+
+impl Look {
+    fn boards(&mut self, seen: &[Seen], now: Instant, registry: impl FnOnce() -> Vec<UsbDevice>) -> Vec<UsbBoard> {
+        let broadcom = seen.iter().filter(|d| format!("{:04x}", d.vendor_id) == BROADCOM_VID);
+        let (roms, others): (Vec<&Seen>, Vec<&Seen>) =
+            broadcom.partition(|d| BOOT_PIDS.contains(&format!("{:04x}", d.product_id).as_str()));
+        let mut out: Vec<UsbBoard> = roms
+            .iter()
+            .map(|d| UsbBoard {
+                port: port_of(d.location_id),
+                kind: BoardKind::Boot,
+                product_id: format!("{:04x}", d.product_id),
+                serial: d.serial.clone(),
+            })
+            .collect();
+        if others.is_empty() {
+            self.asked = None;
+        } else {
+            let mut about: Vec<u64> = others.iter().map(|d| d.entry).collect();
+            about.sort_unstable();
+            // Every one of them a gadget: it stays one while it is connected (also with its disk
+            // ejected). Otherwise the disk may still be on its way.
+            let stands = self.asked.as_ref().is_some_and(|a| {
+                a.about == about && (a.gadgets.len() == about.len() || now.duration_since(a.at) < ASK_AGAIN)
+            });
+            if !stands {
+                let gadgets = boards_of(&registry()).into_iter().filter(|b| b.kind == BoardKind::Gadget).collect();
+                self.asked = Some(Asked { about, at: now, gadgets });
+            }
+            out.extend(self.asked.iter().flat_map(|a| a.gadgets.iter().cloned()));
+        }
+        out.sort_by(|a, b| a.port.cmp(&b.port));
+        out
+    }
+}
+
+/// The boards on USB, as [`crate::usb::boards`] gives them. Cheap enough to ask every second:
+/// see [`Look`].
 pub fn boards() -> Vec<UsbBoard> {
-    boards_of(&usb_devices().unwrap_or_default())
+    static LOOK: Mutex<Look> = Mutex::new(Look { asked: None });
+    let registry = || usb_devices().unwrap_or_default();
+    match seen() {
+        Some(seen) => LOOK.lock().unwrap_or_else(PoisonError::into_inner).boards(&seen, Instant::now(), registry),
+        // The devices could not be listed: the registry alone answers.
+        None => boards_of(&registry()),
+    }
 }
 
 /// A Broadcom device is a board when it is a boot ROM, or when the CM4's eMMC is behind it: the
@@ -368,30 +476,95 @@ fn raw_path(path: &Path) -> Result<(String, PathBuf)> {
 /// would open any disk of this computer, so the disk is looked up again here, and the handle must
 /// be that disk's.
 pub fn open_disk(path: &Path) -> Result<File> {
-    let (name, raw) = raw_path(path)?;
-    // Before the password dialog: a disk that is not a FIBER's is not even asked for.
-    cm4_emmc(&name).with_context(|| format!("{} is not a FIBER's memory; not writing", path.display()))?;
-    let file = match OpenOptions::new().read(true).write(true).open(&raw) {
-        Ok(f) => f,
-        // The usual case: the raw device belongs to root.
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => authopen(&raw)?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!("{} is gone", path.display()),
-        Err(e) if e.kind() == std::io::ErrorKind::ResourceBusy => {
-            bail!("{} is in use on this computer (macOS mounted it again?); try again", path.display())
-        }
-        Err(e) => bail!("cannot open {} for writing: {e}", path.display()),
-    };
-    // And with the disk open, when its name can no longer go to another one.
-    let emmc =
-        cm4_emmc(&name).with_context(|| format!("{} went away while opening it; not writing", path.display()))?;
-    let meta = file.metadata()?;
-    let rdev = meta.rdev();
-    // Darwin's device numbers: the major in the top byte.
-    let (major, minor) = ((rdev >> 24) & 0xff, rdev & 0xff_ffff);
-    if !meta.file_type().is_char_device() || emmc.major != Some(major) || emmc.minor != Some(minor) {
-        bail!("{} changed while opening it; not writing", path.display());
+    match open_disks(&[path.to_path_buf()]).pop() {
+        Some(opened) => opened,
+        None => bail!("{} was not opened", path.display()),
     }
-    Ok(file)
+}
+
+/// [`open_disk`] for several FIBERs at once, with one password dialog for all of them: one
+/// result for each path, in their order. A disk that cannot be opened does not keep the others
+/// closed.
+pub fn open_disks(paths: &[PathBuf]) -> Vec<Result<File>> {
+    /// How far one disk got.
+    enum Step {
+        Failed(anyhow::Error),
+        /// Checked to be a FIBER's, and to be asked for: its name and raw device.
+        ToAsk(String, PathBuf),
+        Open(String, File),
+    }
+    let mut steps: Vec<Step> = paths
+        .iter()
+        .map(|path| {
+            let (name, raw) = match raw_path(path) {
+                Ok(found) => found,
+                Err(e) => return Step::Failed(e),
+            };
+            // Before the password dialog: a disk that is not a FIBER's is not even asked for.
+            if let Err(e) = cm4_emmc(&name) {
+                return Step::Failed(e.context(format!("{} is not a FIBER's memory; not writing", path.display())));
+            }
+            match OpenOptions::new().read(true).write(true).open(&raw) {
+                Ok(f) => Step::Open(name, f),
+                // The usual case: the raw device belongs to root.
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Step::ToAsk(name, raw),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    Step::Failed(anyhow::anyhow!("{} is gone", path.display()))
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::ResourceBusy => Step::Failed(anyhow::anyhow!(
+                    "{} is in use on this computer (macOS mounted it again?); try again",
+                    path.display()
+                )),
+                Err(e) => Step::Failed(anyhow::anyhow!("cannot open {} for writing: {e}", path.display())),
+            }
+        })
+        .collect();
+
+    let to_ask: Vec<PathBuf> =
+        steps.iter().filter_map(|s| if let Step::ToAsk(_, raw) = s { Some(raw.clone()) } else { None }).collect();
+    if !to_ask.is_empty() {
+        // Kept until every disk is open: the right handed to authopen is good only that long.
+        let permission = ask(&to_ask);
+        for step in &mut steps {
+            let Step::ToAsk(name, raw) = step else { continue };
+            *step = match &permission {
+                Permission::Refused => Step::Failed(anyhow::anyhow!(
+                    "writing the FIBER was not allowed (the password dialog was closed or refused)"
+                )),
+                Permission::Allowed(granted) => match authopen(raw, Some(&granted.form)) {
+                    Ok(f) => Step::Open(std::mem::take(name), f),
+                    Err(e) => Step::Failed(e),
+                },
+                Permission::Unavailable => match authopen(raw, None) {
+                    Ok(f) => Step::Open(std::mem::take(name), f),
+                    Err(e) => Step::Failed(e),
+                },
+            };
+        }
+    }
+
+    steps
+        .into_iter()
+        .zip(paths)
+        .map(|(step, path)| {
+            let (name, file) = match step {
+                Step::Open(name, file) => (name, file),
+                Step::Failed(e) => return Err(e),
+                Step::ToAsk(..) => bail!("{} was not opened", path.display()),
+            };
+            // And with the disk open, when its name can no longer go to another one.
+            let emmc = cm4_emmc(&name)
+                .with_context(|| format!("{} went away while opening it; not writing", path.display()))?;
+            let meta = file.metadata()?;
+            let rdev = meta.rdev();
+            // Darwin's device numbers: the major in the top byte.
+            let (major, minor) = ((rdev >> 24) & 0xff, rdev & 0xff_ffff);
+            if !meta.file_type().is_char_device() || emmc.major != Some(major) || emmc.minor != Some(minor) {
+                bail!("{} changed while opening it; not writing", path.display());
+            }
+            Ok(file)
+        })
+        .collect()
 }
 
 /// The disk of that name, if it is a CM4's eMMC behind a USB device right now.
@@ -404,21 +577,98 @@ fn cm4_emmc(name: &str) -> Result<Disk> {
         .context("no FIBER has such a disk")
 }
 
-/// Asks macOS for the disk: `authopen` shows the password dialog, opens the device as root and
-/// sends the open descriptor back over a socket (its `-stdoutpipe`).
-fn authopen(raw: &Path) -> Result<File> {
+/// What the password dialog says of this app's own, above macOS's words ("FIBER Setup wants to
+/// make changes"). The window sets it in the user's language ([`set_password_prompt`]); the
+/// command line keeps the English one.
+static PROMPT: Mutex<String> = Mutex::new(String::new());
+const PROMPT_EN: &str = "FIBER Setup needs to write the FIBER's memory.";
+
+/// Sets the app's own sentence in the password dialog, in the user's language.
+pub fn set_password_prompt(text: &str) {
+    *PROMPT.lock().unwrap_or_else(PoisonError::into_inner) = text.trim().to_string();
+}
+
+/// What came of asking macOS for the right to open the disks.
+enum Permission {
+    Allowed(Granted),
+    /// The dialog was closed, or the password was not an administrator's.
+    Refused,
+    /// The right could not be asked for here at all (no session with a screen, for one).
+    Unavailable,
+}
+
+/// The right to open the disks that were asked for.
+struct Granted {
+    /// The right in the form `authopen` takes on its standard input.
+    form: [u8; 32],
+    /// The right itself: the form is good only for as long as this lives.
+    _authorization: security_framework::authorization::Authorization,
+}
+
+/// `errAuthorizationDenied` and `errAuthorizationCanceled` of Authorization Services.
+const REFUSED: [i32; 2] = [-60005, -60006];
+
+/// Asks macOS, as this app, for the right to open every one of `raws` for reading and writing:
+/// one dialog for all of them. Asked by the app that is in front, the dialog carries its name
+/// and icon, comes up in front of its window and takes Touch ID at once; asked by `authopen` it
+/// would be "authopen" that wants to make changes, in a dialog that stays behind (what
+/// `authopen(1)` names `-extauth` for).
+fn ask(raws: &[PathBuf]) -> Permission {
+    use security_framework::authorization::{Authorization, AuthorizationItemSetBuilder, Flags};
+    let prompt = {
+        let set = PROMPT.lock().unwrap_or_else(PoisonError::into_inner);
+        if set.is_empty() { PROMPT_EN.to_string() } else { set.clone() }
+    };
+    let asked = || -> std::result::Result<Granted, security_framework::base::Error> {
+        let mut rights = AuthorizationItemSetBuilder::new();
+        for raw in raws {
+            rights = rights.add_right(format!("sys.openfile.readwrite.{}", raw.display()))?;
+        }
+        let dialog = AuthorizationItemSetBuilder::new().add_string("prompt", prompt)?.build();
+        let flags = Flags::INTERACTION_ALLOWED | Flags::EXTEND_RIGHTS | Flags::PREAUTHORIZE;
+        let authorization = Authorization::new(Some(rights.build()), Some(dialog), flags)?;
+        Ok(Granted { form: hand_over(&authorization)?, _authorization: authorization })
+    };
+    match asked() {
+        Ok(granted) => Permission::Allowed(granted),
+        Err(e) if REFUSED.contains(&e.code()) => Permission::Refused,
+        Err(_) => Permission::Unavailable,
+    }
+}
+
+/// An authorization in the form another program takes on its standard input (32 bytes).
+fn hand_over(
+    authorization: &security_framework::authorization::Authorization,
+) -> std::result::Result<[u8; 32], security_framework::base::Error> {
+    Ok(authorization.make_external_form()?.bytes.map(|b| b.to_ne_bytes()[0]))
+}
+
+/// Gets one open disk from macOS: `authopen` opens the device as root, with the `right` this app
+/// asked for ([`ask`]), and sends the open descriptor back over a socket (its `-stdoutpipe`).
+/// Without a right, `authopen` asks by itself.
+fn authopen(raw: &Path, right: Option<&[u8; 32]>) -> Result<File> {
     let (ours, theirs) = UnixStream::pair().context("making a socket for authopen")?;
+    let mut command = Command::new(AUTHOPEN);
+    command.arg("-stdoutpipe");
+    if right.is_some() {
+        command.arg("-extauth");
+    }
     // The Command (and with it this side's copy of `theirs`) is gone at the end of the statement,
     // so the read below ends when authopen does, with or without a descriptor.
-    let child = Command::new(AUTHOPEN)
-        .arg("-stdoutpipe")
+    let mut child = command
         .args(["-o", &libc::O_RDWR.to_string()])
         .arg(raw)
-        .stdin(Stdio::null())
+        .stdin(if right.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::from(OwnedFd::from(theirs)))
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("starting {AUTHOPEN}"))?;
+    drop(command);
+    if let (Some(form), Some(mut stdin)) = (right, child.stdin.take()) {
+        use std::io::Write;
+        // authopen reads the right first; a failure here shows as "no descriptor" below.
+        let _ = stdin.write_all(form);
+    }
     let fd = receive_fd(&ours);
     let out = child.wait_with_output().context("waiting for authopen")?;
     match fd? {
@@ -702,6 +952,126 @@ mod tests {
         assert!(parse(b"").unwrap().is_empty());
         assert!(parse(b"\n").unwrap().is_empty());
         assert!(parse(b"not a property list").is_err());
+    }
+
+    /// No dialog: an authorization with no rights in it is made and put into the form `authopen`
+    /// reads, which shows that Authorization Services answer here and what the form looks like.
+    #[test]
+    fn an_authorization_can_be_handed_to_another_program() {
+        let empty = security_framework::authorization::Authorization::default().unwrap();
+        let form = hand_over(&empty).unwrap();
+        assert_ne!(form, [0u8; 32]);
+        assert_ne!(form, hand_over(&security_framework::authorization::Authorization::default().unwrap()).unwrap());
+    }
+
+    #[test]
+    fn the_dialog_says_the_sentence_the_window_set() {
+        assert!(PROMPT.lock().unwrap().is_empty(), "the command line's sentence is the English one");
+        set_password_prompt("  FIBER Setup potřebuje zapsat paměť FIBER.  ");
+        assert_eq!(*PROMPT.lock().unwrap(), "FIBER Setup potřebuje zapsat paměť FIBER.");
+        set_password_prompt("");
+    }
+
+    fn seen_at(entry: u64, product_id: u16, location_id: u32) -> Seen {
+        Seen { entry, vendor_id: 0x0a5c, product_id, location_id, serial: None }
+    }
+
+    /// The gadget as the registry gives it: its storage unit, with or without a disk in it.
+    fn gadget_at(location_id: u32, with_unit: bool) -> UsbDevice {
+        UsbDevice {
+            vendor_id: 0x0a5c,
+            product_id: 0x0104,
+            location_id,
+            serial: Some("10000000a1b2c3d4".into()),
+            units: if with_unit { vec![("mmcblk0".into(), "Raspberry Pi mul".into())] } else { Vec::new() },
+            disks: Vec::new(),
+        }
+    }
+
+    /// Waiting for a board, and a board in boot mode: the wizard asks every second, and the
+    /// registry (a fifth of a second of work each time) must not be read for it.
+    #[test]
+    fn a_boot_rom_is_found_without_reading_the_registry() {
+        let mut look = Look { asked: None };
+        let never = || -> Vec<UsbDevice> { panic!("the registry was read") };
+        let now = Instant::now();
+        // Nothing of Broadcom's: a keyboard.
+        let keyboard = Seen { entry: 1, vendor_id: 0x05ac, product_id: 0x0342, location_id: 0x0120_0000, serial: None };
+        assert_eq!(look.boards(std::slice::from_ref(&keyboard), now, never), []);
+        let rom = Seen { serial: Some("a1b2c3d4".into()), ..seen_at(2, 0x2711, 0x0210_0000) };
+        let boards = look.boards(&[keyboard, rom], now, never);
+        assert_eq!(
+            boards,
+            [UsbBoard {
+                port: "2-1".into(),
+                kind: BoardKind::Boot,
+                product_id: "2711".into(),
+                serial: Some("a1b2c3d4".into())
+            }]
+        );
+    }
+
+    #[test]
+    fn the_registry_is_read_once_for_a_gadget_and_again_when_it_is_plugged_in_anew() {
+        let mut look = Look { asked: None };
+        let reads = std::cell::Cell::new(0);
+        let registry = || {
+            reads.set(reads.get() + 1);
+            vec![gadget_at(0x0113_0000, true)]
+        };
+        let start = Instant::now();
+        for second in 0..60 {
+            let boards = look.boards(&[seen_at(7, 0x0104, 0x0113_0000)], start + Duration::from_secs(second), registry);
+            assert_eq!(boards.len(), 1);
+            assert_eq!((boards[0].port.as_str(), &boards[0].kind), ("1-1.3", &BoardKind::Gadget));
+        }
+        assert_eq!(reads.get(), 1);
+        // RESET with the jumper still on BOOT: the gadget goes, the boot ROM comes on the same port.
+        let boards = look.boards(&[seen_at(8, 0x2711, 0x0113_0000)], start + Duration::from_secs(60), registry);
+        assert_eq!((boards.len(), &boards[0].kind), (1, &BoardKind::Boot));
+        assert_eq!(reads.get(), 1);
+        // Started over USB again: a new connection, looked at anew.
+        let boards = look.boards(&[seen_at(9, 0x0104, 0x0113_0000)], start + Duration::from_secs(61), registry);
+        assert_eq!((boards.len(), &boards[0].kind), (1, &BoardKind::Gadget));
+        assert_eq!(reads.get(), 2);
+        // Both at once: a second FIBER in boot mode beside the gadget.
+        let both = [seen_at(9, 0x0104, 0x0113_0000), seen_at(10, 0x2711, 0x0210_0000)];
+        let boards = look.boards(&both, start + Duration::from_secs(62), registry);
+        assert_eq!(
+            boards.iter().map(|b| (b.port.as_str(), &b.kind)).collect::<Vec<_>>(),
+            [("1-1.3", &BoardKind::Gadget), ("2-1", &BoardKind::Boot)]
+        );
+        assert_eq!(reads.get(), 2);
+    }
+
+    /// A gadget's disk comes a moment after the gadget; a Broadcom device that never gets one
+    /// (a Bluetooth adapter) must not cost a reading every second.
+    #[test]
+    fn a_broadcom_device_without_a_disk_is_asked_about_again_only_after_a_while() {
+        let mut look = Look { asked: None };
+        let reads = std::cell::Cell::new(0);
+        let has_unit = std::cell::Cell::new(false);
+        let registry = || {
+            reads.set(reads.get() + 1);
+            vec![gadget_at(0x0113_0000, has_unit.get())]
+        };
+        let seen = [seen_at(7, 0x0104, 0x0113_0000)];
+        let start = Instant::now();
+        assert_eq!(look.boards(&seen, start, registry), []);
+        assert_eq!(look.boards(&seen, start + Duration::from_secs(1), registry), []);
+        assert_eq!(reads.get(), 1);
+        has_unit.set(true);
+        assert_eq!(look.boards(&seen, start + ASK_AGAIN, registry).len(), 1);
+        assert_eq!(reads.get(), 2);
+        assert_eq!(look.boards(&seen, start + ASK_AGAIN * 10, registry).len(), 1);
+        assert_eq!(reads.get(), 2);
+    }
+
+    /// The cheap look and the registry must tell the same boards, with whatever is connected to
+    /// this computer now.
+    #[test]
+    fn the_cheap_look_and_the_registry_tell_the_same_boards() {
+        assert_eq!(boards(), boards_of(&usb_devices().unwrap()));
     }
 
     /// The two ways this app looks at USB must name a port alike: the board list comes from

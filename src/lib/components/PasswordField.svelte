@@ -26,9 +26,13 @@
     autocapitalize="off"
     autocorrect="off"
   />
+  <!-- Not a stop for the Tab key: from a password it goes on to the next field. A click on it
+       leaves the cursor in the field, to go on typing. -->
   <button
     class="eye"
     type="button"
+    tabindex="-1"
+    onmousedown={(e) => e.preventDefault()}
     aria-pressed={shown}
     aria-label={shown ? t().common.hidePassword : t().common.showPassword}
     title={shown ? t().common.hidePassword : t().common.showPassword}

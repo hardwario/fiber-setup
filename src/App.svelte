@@ -21,7 +21,7 @@
   import Welcome from "./views/Welcome.svelte";
   import Write from "./views/Write.svelte";
 
-  /** The sidebar folded to its glyphs; remembered, as in tower-bridge. */
+  /** The sidebar folded to its glyphs; remembered. */
   const COLLAPSED_KEY = "fiber-setup.sidebar.collapsed";
   let collapsed = $state(readCollapsed());
 
@@ -71,30 +71,38 @@
     done: t().done.lead,
   });
   const last = $derived(wizard.index === STEPS.length - 1);
-  /** On the Write step the bar's button writes; once written it is Next again. */
-  const toWrite = $derived(wizard.step === "write" && !wizard.flash.result);
-  /** Next to the bar's button: what the step waits for, so a greyed Next explains itself. */
-  const hint = $derived.by((): { text: string; busy: boolean } | null => {
+  const busy = $derived(wizard.writing);
+  /** FIBERs the Write button would write now: chosen and not written yet. */
+  const pending = $derived(wizard.toWrite.length);
+  /** On the Write step the bar's button writes; with a FIBER written it is Next again, and what
+   * is left (one that failed, one connected since) gets a button of its own beside it. */
+  const toWrite = $derived(wizard.step === "write" && (busy || (pending > 0 && wizard.done.length === 0)));
+  const rest = $derived(wizard.step === "write" && !busy && pending > 0 && wizard.done.length > 0);
+  const tried = $derived(wizard.toWrite.some((port) => wizard.jobs[port]?.error));
+  /** Next to the bar's button: what the step waits for, so a greyed Next explains itself. In
+   * words only: what is going on turns on the page, in one place, and nowhere else. Not what the
+   * step's pinned status already says (Status.svelte): that is always in view too. */
+  const hint = $derived.by((): string | null => {
     switch (wizard.step) {
       case "image":
-        return wizard.image.busy ? { text: t().image.preparing, busy: true } : null;
+        return wizard.image.busy ? t().image.preparing : null;
       case "settings":
-        return Object.keys(wizard.errors).some((k) => wizard.touched[k]) ? { text: t().settings.fix, busy: false } : null;
+        return Object.keys(wizard.errors).some((k) => wizard.touched[k]) ? t().settings.fix : null;
       case "connect":
-        if (!wizard.port) return { text: t().connect.waiting, busy: true };
         if (wizard.access && !wizard.access.rules_installed) {
-          return { text: wizard.info?.os === "windows" ? t().connect.needDriver : t().connect.needAccess, busy: false };
+          return wizard.info?.os === "windows" ? t().connect.needDriver : t().connect.needAccess;
         }
         return null;
       case "write":
-        return wizard.flash.busy ? { text: t().write.keep, busy: false } : null;
+        if (busy) return t().write.keep;
+        // Nothing to write and nothing written: the FIBER was taken off USB.
+        return pending === 0 && wizard.done.length === 0 ? t().connect.waiting : null;
       default:
         return null;
     }
   });
   /** A step that is behind the user; all of them once the last one is reached. */
   const completed = (i: number) => i < wizard.reached || wizard.reached === STEPS.length - 1;
-  const busy = $derived(wizard.flash.busy);
   let main = $state<HTMLElement | null>(null);
   $effect(() => {
     void wizard.step;
@@ -249,33 +257,41 @@
               {t().common.back}
             </button>
             <div class="forward">
-              {#if hint}
-                <span class="hint">{#if hint.busy}<Icon name="loader" size={14} />{/if}<span>{hint.text}</span></span>
-              {/if}
-              {#if busy}
-                <button class="btn large" onclick={() => wizard.cancel()}>{t().common.cancel}</button>
-              {/if}
-              {#if toWrite}
-                <!-- The step's one action, where the eye already is for Next. -->
-                <button class="btn primary large" disabled={busy} onclick={() => wizard.startFlash()}>
-                  {#if busy}
-                    <Icon name="loader" size={15} />
-                    {t().write.writing}
-                  {:else}
+              {#if hint}<span class="hint">{hint}</span>{/if}
+              <!-- The buttons stay together; the hint goes above them where there is no room beside. -->
+              <div class="buttons">
+                {#if busy}
+                  <button class="btn large" onclick={() => wizard.cancel()}>{t().common.cancel}</button>
+                {/if}
+                {#if toWrite}
+                  <!-- The step's one action, where the eye already is for Next. -->
+                  <button class="btn primary large" disabled={busy} onclick={() => wizard.startFlash()}>
                     <Icon name="drive" size={15} />
-                    {wizard.flash.error ? t().common.retry : t().write.start}
+                    {busy
+                      ? t().write.writing
+                      : tried
+                        ? t().common.retry
+                        : pending > 1
+                          ? fill(t().write.startMany, { count: pending })
+                          : t().write.start}
+                  </button>
+                {:else}
+                  {#if rest}
+                    <button class="btn large" onclick={() => wizard.startFlash()}>
+                      <Icon name="drive" size={15} />
+                      {fill(t().write.remaining, { count: pending })}
+                    </button>
                   {/if}
-                </button>
-              {:else}
-                <button
-                  class="btn primary large"
-                  disabled={busy || (!wizard.canNext && wizard.step !== "settings")}
-                  onclick={() => wizard.next()}
-                >
-                  {wizard.step === "start" ? t().start.finish : t().common.next}
-                  <Icon name="arrow-right" size={15} />
-                </button>
-              {/if}
+                  <button
+                    class="btn primary large"
+                    disabled={busy || (!wizard.canNext && wizard.step !== "settings")}
+                    onclick={() => wizard.next()}
+                  >
+                    {wizard.step === "start" ? t().start.finish : t().common.next}
+                    <Icon name="arrow-right" size={15} />
+                  </button>
+                {/if}
+              </div>
             </div>
           </div>
         </footer>
@@ -287,15 +303,15 @@
 <style>
   .app {
     display: grid;
-    grid-template-columns: 250px 1fr;
+    grid-template-columns: 300px 1fr;
     height: 100%;
     grid-template-rows: minmax(0, 1fr);
   }
   .app.collapsed {
     grid-template-columns: 72px 1fr;
   }
-  /* The menu half as large again as tower-bridge's: the window's page zoom (src-tauri) gives
-     1.25, this the rest, inside the 250 px / 72 px columns above. */
+  /* The menu half as large again as its sizes say: the window's page zoom (src-tauri) gives
+     1.25, this the rest, inside the 300 px / 72 px columns above. */
   .sidebar {
     zoom: 1.2;
     display: flex;
@@ -370,7 +386,7 @@
     border: none;
     border-radius: 8px;
     background: transparent;
-    color: var(--text-2);
+    color: var(--text);
     font-size: 13px;
     font-weight: 500;
     text-align: left;
@@ -378,10 +394,11 @@
   }
   .item:hover:not(:disabled):not(.active) {
     background: var(--hover);
-    color: var(--text);
   }
+  /* A step that cannot be opened yet: clearly paler than one that can. */
   .item:disabled {
     color: var(--text-muted);
+    opacity: 0.6;
     cursor: default;
   }
   .item.active {
@@ -514,10 +531,12 @@
     justify-content: center;
     padding: 0;
   }
+  /* The room for the scrollbar is always kept: a page long enough to scroll would otherwise be
+     narrower than a short one, and its column would sit a few pixels further left. */
   main {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow-y: scroll;
     min-width: 0;
   }
   /* One column, read from the top down: the page's head, then its parts one under the other. */
@@ -530,6 +549,9 @@
     max-width: 740px;
     margin: 0 auto;
     padding: 28px 28px 32px;
+    /* The pages lay themselves out by the room they have here, not by the window: the menu
+       beside them can be open or collapsed. */
+    container-type: inline-size;
   }
   .page-head {
     display: flex;
@@ -589,25 +611,29 @@
     padding: 12px 28px;
   }
   .forward {
+    flex: 1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 6px 10px;
     min-width: 0;
   }
-  .forward .hint {
+  .buttons {
     display: flex;
-    align-items: center;
-    gap: 7px;
+    gap: 10px;
+  }
+  /* In a narrow window the hint takes two lines instead of being cut off, and where the buttons
+     leave it no room at all it goes on a line of its own above them. */
+  .forward .hint {
+    flex: 1 1 170px;
     min-width: 0;
     margin-right: 4px;
     color: var(--text-muted);
     font-size: 13px;
-  }
-  .forward .hint span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    text-align: right;
+    text-wrap: balance;
   }
   .center {
     display: grid;

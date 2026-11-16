@@ -15,6 +15,8 @@ pub enum Phase {
     Settings,
     Boot,
     WaitDisk,
+    /// Started, its memory found: waits for the permission to write and, in a batch, its turn.
+    Ready,
     Write,
     Verify,
     Done,

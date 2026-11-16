@@ -1,6 +1,6 @@
 <script lang="ts">
   /** A newer version of FIBER Setup is out: says so and leads to its downloads. Closed, it stays
-   * closed for that version (the step list still names it). The look of TOWER Bridge's banner. */
+   * closed for that version (the step list still names it). */
   import { fill, t } from "../i18n/index.svelte";
   import { wizard } from "../wizard.svelte";
   import Icon from "./Icon.svelte";

@@ -1,4 +1,6 @@
-/** What the Rust side sends; snake_case as in tower-bridge. */
+import type { Lang } from "./i18n/index.svelte";
+
+/** What the Rust side sends; snake_case, as Rust names them. */
 
 export interface OsImage {
   id: string;
@@ -22,7 +24,7 @@ export interface AppInfo {
     timezone: string | null;
     ssh_key: string | null;
     ssh_key_path: string | null;
-    language: "en" | "cs";
+    language: Lang;
   };
 }
 
@@ -39,7 +41,17 @@ export interface ImageStatus {
   prepared: Prepared | null;
 }
 
-export type Phase = "download" | "check" | "unpack" | "settings" | "boot" | "wait_disk" | "write" | "verify" | "done";
+export type Phase =
+  | "download"
+  | "check"
+  | "unpack"
+  | "settings"
+  | "boot"
+  | "wait_disk"
+  | "ready"
+  | "write"
+  | "verify"
+  | "done";
 
 export type JobEvent =
   | { type: "phase"; phase: Phase }
@@ -73,6 +85,12 @@ export interface Settings {
   country: string;
   timezone: string | null;
   install_fiber: boolean;
+}
+
+/** One FIBER of a batch: its USB port and, without the FIBER software, the name it gets. */
+export interface FlashDevice {
+  port: string;
+  hostname: string | null;
 }
 
 export interface FlashReport {
