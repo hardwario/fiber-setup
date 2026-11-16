@@ -221,6 +221,6 @@ the parts where the board's design (R2.1) has them; their sources are in HARDWAR
 
 ## Licence
 
-MIT, with one exception: `crates/fiber-setup-core/src/rpiboot.rs` is derived from Raspberry Pi's rpiboot
-and is, like it, under the Apache License 2.0 (`LICENSES/Apache-2.0.txt`). The gadget's files are Raspberry
-Pi's, under their own licences, which `npm run usbboot` puts into the bundle next to them.
+MIT (`LICENSE`), with one exception: `crates/fiber-setup-core/src/rpiboot.rs` is derived from Raspberry
+Pi's rpiboot and is, like it, under the Apache License 2.0 (`LICENSES/Apache-2.0.txt`). The gadget's files
+are Raspberry Pi's, under their own licences, which `npm run usbboot` puts into the bundle next to them.
