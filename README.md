@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="src/assets/brand/hardwario-fiber-logo-stacked-reversed.svg">
-    <img src="src/assets/brand/hardwario-fiber-logo-stacked.svg" alt="HARDWARIO FIBER" height="64">
-  </picture>
+  <img src="src/assets/brand/hardwario-fiber-logo-stacked.svg" alt="HARDWARIO FIBER" height="64">
 </p>
 
 <h1 align="center">FIBER Setup</h1>
@@ -26,10 +23,7 @@
   <a href="#building-from-source">Building from source</a>
 </p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/connect.dark.webp">
-  <img src="docs/images/connect.webp" alt="FIBER Setup on its fifth step, Connect the FIBER: the FIBER was found on USB, and a drawing of the open FIBER shows the USB-B cable and the RESET button">
-</picture>
+<img src="docs/images/connect.webp" alt="FIBER Setup on its fifth step, Connect the FIBER: the FIBER was found on USB, and a drawing of the open FIBER shows the USB-B cable and the RESET button">
 
 ## What it does
 
@@ -137,36 +131,21 @@ Nine steps in three parts. The step list on the left shows where you are, and *B
 | | 8. Follow the first start | The FIBER joins your network and installs the FIBER software, in about 10 minutes. The app looks for it on the network |
 | | 9. Log in to the system | The `ssh` command for your FIBER, with the user name and the password you chose |
 
-<table>
-  <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings.dark.webp">
-        <img src="docs/images/settings.webp" alt="Step 3, Settings: device name, time zone, user name, password and SSH key">
-      </picture>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/boot-mode.dark.webp">
-        <img src="docs/images/boot-mode.webp" alt="Step 4, Put the FIBER into boot mode: four instructions and a drawing of the open FIBER with the jumper's pins circled">
-      </picture>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/write.dark.webp">
-        <img src="docs/images/write.webp" alt="Step 6, Write the FIBER: what goes onto the FIBER, and the image being written at 45 %">
-      </picture>
-    </td>
-    <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/done.dark.webp">
-        <img src="docs/images/done.webp" alt="Step 9, Your FIBER is set up: the ssh command by name and by address, the user name and the hidden password">
-      </picture>
-    </td>
-  </tr>
-</table>
+**Step 3: Enter the settings**
+
+<img src="docs/images/settings.webp" alt="Step 3, Settings: device name, time zone, user name, password and SSH key">
+
+**Step 4: Activate boot mode**
+
+<img src="docs/images/boot-mode.webp" alt="Step 4, Put the FIBER into boot mode: four instructions and a drawing of the open FIBER with the jumper's pins circled">
+
+**Step 6: Write the software**
+
+<img src="docs/images/write.webp" alt="Step 6, Write the FIBER: what goes onto the FIBER, and the image being written at 45 %">
+
+**Step 9: Log in to the system**
+
+<img src="docs/images/done.webp" alt="Step 9, Your FIBER is set up: the ssh command by name and by address, the user name and the hidden password">
 
 ### Good to know
 
@@ -194,22 +173,13 @@ Up to 8 FIBERs can be set up in one go, with the same settings. Connect each the
 USB-B cable, power, `RESET`): the *Connect the FIBER* step lists every one it finds, each with a tick that
 can be taken off.
 
-<table>
-  <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/several-connect.dark.webp">
-        <img src="docs/images/several-connect.webp" alt="Connect the FIBER with four FIBERs found on USB, each with a tick">
-      </picture>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/several-write.dark.webp">
-        <img src="docs/images/several-write.webp" alt="Write the FIBER with four FIBERs, each with its own progress bar">
-      </picture>
-    </td>
-  </tr>
-</table>
+**Step 5 with four FIBERs: choose the ones to write**
+
+<img src="docs/images/several-connect.webp" alt="Connect the FIBER with four FIBERs found on USB, each with a tick">
+
+**Step 6 with four FIBERs: each with its own progress**
+
+<img src="docs/images/several-write.webp" alt="Write the FIBER with four FIBERs, each with its own progress bar">
 
 The *Write the software* step then offers two ways:
 
@@ -383,8 +353,8 @@ machine.
 | `FIBER_SETUP_UPDATE_CHECK=0` | The app does not ask GitHub for the newest release (the demo never does) |
 | `FIBER_SETUP_UPDATE_URL=http://…` | Ask this address instead of GitHub (a JSON file with `tag_name`), to try the notice |
 
-`npm run screenshots` regenerates the screenshots in this README (`docs/images`) from the browser preview,
-in the light and in the dark theme (needs Google Chrome).
+`npm run screenshots` regenerates the screenshots in this README (`docs/images`) from the browser preview
+(needs Google Chrome).
 
 Translations: the dictionaries are `src/lib/i18n/{en,cs,de,sk,pl}.ts`. English is the reference; the others
 are type-checked against it, so a new text goes into all five. The installer's texts are in

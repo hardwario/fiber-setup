@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Regenerates the screenshots in docs/images (the ones in the README) from the browser preview:
-// the app's own screens with a simulated FIBER, in the light and in the dark theme. It walks the
-// wizard the way a user does, once with one FIBER and once with four, and takes a picture where
-// a shot says so. Needs Google Chrome or Chromium installed.
+// the app's own screens with a simulated FIBER, in the light theme. It walks the wizard the way
+// a user does, once with one FIBER and once with four, and takes a picture where a shot says so.
+// Needs Google Chrome or Chromium installed.
 //
 //   npm run screenshots                  all of them
 //   npm run screenshots -- write done    only some
@@ -17,7 +17,6 @@ import { createServer } from "vite";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "docs/images");
-const THEMES = ["light", "dark"];
 const VIEWPORT = { width: 1200, height: 800 };
 
 /** The pictures: the step each is taken on, and with how many simulated FIBERs. */
@@ -70,7 +69,7 @@ const WALK = [
   { step: "done", ready: () => true },
 ];
 
-async function capture(page, cdp, shot, theme) {
+async function capture(page, cdp, shot) {
   await page.mouse.move(0, VIEWPORT.height - 1);
   // The size is set here, straight in Chrome, and not only through the context's viewport:
   // headless Chrome's own window is lower than the viewport asked for, and a capture would stop
@@ -79,7 +78,7 @@ async function capture(page, cdp, shot, theme) {
   await page.waitForTimeout(400);
   // WebP straight from Chrome keeps the files small without extra tools.
   const { data } = await cdp.send("Page.captureScreenshot", { format: "webp", quality: 82 });
-  const file = join(OUT, `${shot.name}${theme === "dark" ? ".dark" : ""}.webp`);
+  const file = join(OUT, `${shot.name}.webp`);
   await writeFile(file, Buffer.from(data, "base64"));
   console.log(file.slice(ROOT.length + 1));
 }
@@ -99,32 +98,30 @@ const browser = await chromium.launch(
 
 try {
   await mkdir(OUT, { recursive: true });
-  for (const theme of THEMES) {
-    for (const boards of [...new Set(shots.map((s) => s.boards))]) {
-      const mine = shots.filter((s) => s.boards === boards);
-      const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, colorScheme: theme });
-      // English, and the theme the browser asks for.
-      await context.addInitScript(() =>
-        localStorage.setItem("fiber-setup.prefs", JSON.stringify({ theme: "system", language: "en" })),
-      );
-      const page = await context.newPage();
-      const cdp = await context.newCDPSession(page);
-      await page.goto(`${base}?boards=${boards}`);
-      await until(page, (w) => !!w?.info);
-      // The preview's own label is not part of the app.
-      await page.addStyleTag({ content: ".sim { display: none !important; }" });
+  for (const boards of [...new Set(shots.map((s) => s.boards))]) {
+    const mine = shots.filter((s) => s.boards === boards);
+    const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, colorScheme: "light" });
+    // English, and the theme the browser asks for.
+    await context.addInitScript(() =>
+      localStorage.setItem("fiber-setup.prefs", JSON.stringify({ theme: "system", language: "en" })),
+    );
+    const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    await page.goto(`${base}?boards=${boards}`);
+    await until(page, (w) => !!w?.info);
+    // The preview's own label is not part of the app.
+    await page.addStyleTag({ content: ".sim { display: none !important; }" });
 
-      const last = Math.max(...mine.map((s) => WALK.findIndex((step) => step.step === s.at)));
-      for (const stage of WALK.slice(0, last + 1)) {
-        await wizard(page, (w) => w.next());
-        await until(page, `(w) => w.step === ${JSON.stringify(stage.step)}`);
-        if (stage.enter) await wizard(page, stage.enter);
-        await until(page, stage.ready);
-        for (const shot of mine.filter((s) => s.at === stage.step)) await capture(page, cdp, shot, theme);
-        if (stage.leave) await until(page, stage.leave, 120000);
-      }
-      await context.close();
+    const last = Math.max(...mine.map((s) => WALK.findIndex((step) => step.step === s.at)));
+    for (const stage of WALK.slice(0, last + 1)) {
+      await wizard(page, (w) => w.next());
+      await until(page, `(w) => w.step === ${JSON.stringify(stage.step)}`);
+      if (stage.enter) await wizard(page, stage.enter);
+      await until(page, stage.ready);
+      for (const shot of mine.filter((s) => s.at === stage.step)) await capture(page, cdp, shot);
+      if (stage.leave) await until(page, stage.leave, 120000);
     }
+    await context.close();
   }
 } finally {
   await browser.close();
