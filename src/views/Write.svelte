@@ -36,15 +36,15 @@
   const written = $derived(wizard.done.length);
   const failed = $derived(ports.filter((port) => !job(port).busy && job(port).error).length);
 
-  // With the FIBER software a name comes from the serial number, known once it is written;
+  // With the FIBER platform a name comes from the serial number, known once it is written;
   // without it the FIBERs are numbered on from the name in the settings.
   const names = $derived(
-    ports.map((port, i) => job(port).result?.hostname ?? (wizard.form.installFiber ? null : wizard.nameAt(i))),
+    ports.map((port, i) => job(port).result?.hostname ?? (wizard.installFiber ? null : wizard.nameAt(i))),
   );
-  // In the summary: one FIBER's name, or the names of several; with the FIBER software the
+  // In the summary: one FIBER's name, or the names of several; with the FIBER platform the
   // pattern they all follow (each line below shows its own once it is written).
   const name = $derived(
-    many && wizard.form.installFiber
+    many && wizard.installFiber
       ? `${t().start.hubUnknown}.local`
       : names.map((n) => `${n ?? t().start.hubUnknown}.local`).join(", "),
   );

@@ -51,6 +51,9 @@ struct AppInfo {
     version: &'static str,
     os: &'static str,
     image: catalog::OsImage,
+    /// The FIBER platform a new FIBER can install; none only if its list cannot be read, which
+    /// the tests would have found.
+    platform: Option<fiber_setup_core::platform::Offer>,
     tools_found: bool,
     defaults: Defaults,
 }
@@ -194,6 +197,7 @@ fn app_info(app: AppHandle) -> AppInfo {
         version: fiber_setup_core::VERSION,
         os: std::env::consts::OS,
         image: catalog::RASPIOS_LITE,
+        platform: fiber_setup_core::platform::offer().ok(),
         tools_found: tools(&app).is_some(),
         defaults: Defaults {
             hostname: "fiber".into(),
@@ -332,8 +336,8 @@ fn cancel(state: State<'_, AppState>) {
 }
 
 #[tauri::command]
-async fn find_device(hostname: String) -> Option<check::Found> {
-    tauri::async_runtime::spawn_blocking(move || check::find(&hostname)).await.ok().flatten()
+async fn find_device(hostname: String, progress: bool) -> Option<check::Found> {
+    tauri::async_runtime::spawn_blocking(move || check::find(&hostname, progress)).await.ok().flatten()
 }
 
 /// What opens a link in the user's browser. On Windows it is Explorer: the app runs as

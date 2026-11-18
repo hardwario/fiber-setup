@@ -7,6 +7,14 @@
   const img = $derived(wizard.image);
   const info = $derived(wizard.info);
   const gb = (n: number) => (n / 1e9).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const offer = $derived(info?.platform ?? null);
+  /** The ticked components by their names, in the user's language. */
+  const chosen = $derived(
+    (offer?.components ?? [])
+      .filter((c) => wizard.form.components.includes(c.id))
+      .map((c) => (t().components as Record<string, { title: string } | undefined>)[c.id]?.title ?? c.title)
+      .join(", "),
+  );
 </script>
 
 <!-- The two things that make a working FIBER, in the order they get onto it. -->
@@ -59,16 +67,16 @@
   </div>
 </section>
 
-<section class="card pad part" class:off={!wizard.form.installFiber}>
+<section class="card pad part" class:off={!wizard.installFiber}>
   <div class="glyph"><Icon name="download" size={22} /></div>
   <div class="what">
     <div class="top">
       <div class="names">
         <div class="label">{t().image.later}</div>
-        <div class="name">{t().image.fiber}</div>
+        <div class="name">{fill(t().image.fiber, { version: offer?.release.version ?? "" })}</div>
       </div>
     </div>
-    <div class="muted small">{wizard.form.installFiber ? t().image.fiberText : t().image.fiberOff}</div>
+    <div class="muted small">{wizard.installFiber ? fill(t().image.fiberText, { components: chosen }) : t().image.fiberOff}</div>
   </div>
 </section>
 

@@ -19,6 +19,8 @@ hex = "0.4"
 liblzma = { version = "0.4", features = ["static"] }
 nusb = "0.2"
 semver = "1"
+# The copy of the platform's `components.yaml`, read with the crate the platform reads it with.
+serde-saphyr = { version = "2.1", default-features = false, features = ["deserialize"] }
 sha-crypt = "0.5"
 sha2 = "0.10"
 ureq = "3.5"

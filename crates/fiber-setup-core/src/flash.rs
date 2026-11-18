@@ -452,7 +452,9 @@ mod tests {
             wifi: Some(Wifi { ssid: "Dílna \"5G\"".into(), password: "pa:ss;word\\x".into(), hidden: true }),
             country: "CZ".into(),
             timezone: Some("Europe/Prague".into()),
-            install_fiber: true,
+            components: vec!["agent".into(), "node-red".into()],
+            mqtt_lan: false,
+            minipcie: Default::default(),
         }
     }
 
@@ -503,7 +505,15 @@ mod tests {
 
         assert_eq!(
             testimg::boot_files(&written),
-            ["cmdline.txt", "config.txt", "fiber-install.sh", "meta-data", "network-config", "user-data"]
+            [
+                "cmdline.txt",
+                "config.txt",
+                "fiber-install.sh",
+                "fiber-seed.yaml",
+                "meta-data",
+                "network-config",
+                "user-data"
+            ]
         );
         let id = &report.instance_id;
         assert_eq!(
@@ -512,7 +522,13 @@ mod tests {
         );
         assert_eq!(testimg::boot_file(&written, "meta-data").unwrap(), format!("instance-id: {id}\n"));
         assert_eq!(testimg::boot_file(&written, "config.txt").unwrap(), "arm_64bit=1\n");
-        assert_eq!(testimg::boot_file(&written, "fiber-install.sh").unwrap(), firstboot::INSTALL_SCRIPT);
+        assert_eq!(
+            testimg::boot_file(&written, "fiber-install.sh").unwrap(),
+            firstboot::install_script(&crate::catalog::FIBER_PLATFORM)
+        );
+        let seed = testimg::boot_file(&written, "fiber-seed.yaml").unwrap();
+        assert!(seed.contains("components: {base: true, mosquitto: true, agent: true, node-red: true}\n"), "{seed}");
+        assert!(seed.contains("login: {user: \"marek\", password: \"correct horse\"}\n"), "{seed}");
         let user = testimg::boot_file(&written, "user-data").unwrap();
         assert!(user.starts_with("#cloud-config\n"), "{user}");
         assert!(user.contains("hostname: \"fiber\"\n"), "{user}");
@@ -725,7 +741,7 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let desk = Desk::new(t.path());
         let mut plain = settings();
-        plain.install_fiber = false;
+        plain.components.clear();
         let devices = [
             Device { port: "1-1".into(), hostname: Some("bench".into()) },
             Device { port: "1-2".into(), hostname: Some("bench-2".into()) },
@@ -820,6 +836,7 @@ mod tests {
                 ("cmdline.txt", "console=tty1 rootwait ds=nocloud;i=old cfg80211.ieee80211_regdom=GB\n"),
                 ("user-data", "#cloud-config\nhostname: old\n"),
                 ("fiber-install.sh", "old script\n"),
+                ("fiber-seed.yaml", "old seed\n"),
                 ("fiber-cm4-setup.sh", "older script\n"),
                 ("fiber-setup.log", "old log\n"),
             ],
@@ -828,7 +845,7 @@ mod tests {
         std::fs::write(&raw, testimg::disk_around(&boot)).unwrap();
         let out = t.path().join("out.img");
         let mut plain = settings();
-        plain.install_fiber = false;
+        plain.components.clear();
         plain.wifi = None;
         plain.hostname = "bench-7".into();
         let report = run_to_file(&prepared(&raw), &plain, &out, &|_| {}, &Cancel::new()).unwrap();

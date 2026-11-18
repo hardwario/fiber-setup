@@ -3,6 +3,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use fiber_setup_core::firstboot::{Settings, Wifi};
+use fiber_setup_core::platform::{self, MiniPcie};
 use fiber_setup_core::{Cancel, Event, access, catalog, check, disk, flash, image, mbr, rpiboot, usb};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -42,18 +43,20 @@ enum Cmd {
     Flash(Box<FlashArgs>),
     /// Show the first-boot files on an image file or a FIBER's eMMC (jumper on BOOT, once it shows as a disk).
     Inspect { path: PathBuf },
-    /// Look for <hostname>.local on this network.
+    /// Look for <hostname>.local on this network, and ask it how far its first start is.
     Find {
         #[arg(default_value = "fiber")]
         hostname: String,
     },
+    /// The release of the FIBER platform a new FIBER installs, and its components.
+    Components,
 }
 
 #[derive(clap::Args)]
 struct FlashArgs {
     #[arg(long)]
     file: Option<PathBuf>,
-    /// Device name. With the FIBER software, a FIBER written over USB is named fiber-<serial> instead.
+    /// Device name. With the FIBER platform, a FIBER written over USB is named fiber-<serial> instead.
     #[arg(long, default_value = "fiber")]
     hostname: String,
     #[arg(long, default_value = "fiber")]
@@ -70,15 +73,29 @@ struct FlashArgs {
     country: String,
     #[arg(long)]
     timezone: Option<String>,
-    /// Do not run the FIBER setup script on the first start (plain Raspberry Pi OS).
+    /// The components of the FIBER platform to install on the first start, with what they
+    /// require (see `components`); `none` for a plain Raspberry Pi OS. Default: agent,node-red.
+    #[arg(long, value_delimiter = ',')]
+    components: Option<Vec<String>>,
+    /// MQTT for the network too, on port 1884 with the login (the platform's mqtt.lan).
     #[arg(long)]
-    no_fiber_software: bool,
+    mqtt_lan: bool,
+    /// The card in the mini-PCIe slot.
+    #[arg(long, value_enum, default_value = "none")]
+    minipcie: Card,
     /// The USB port of the FIBER in boot mode (see `devices`); found by itself when there is one.
     #[arg(long)]
     port: Option<String>,
     /// Write into this file instead of a FIBER.
     #[arg(long)]
     to_file: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Card {
+    None,
+    Lte,
+    Rak5146,
 }
 
 fn print_event(e: Event) {
@@ -146,10 +163,32 @@ fn run() -> Result<()> {
         }
         Cmd::Flash(a) => flash_cmd(*a, &cancel)?,
         Cmd::Inspect { path } => inspect(&path)?,
-        Cmd::Find { hostname } => match check::find(&hostname) {
-            Some(f) => println!("{hostname}.local = {} (SSH {})", f.ip, if f.ssh { "open" } else { "closed" }),
+        Cmd::Find { hostname } => match check::find(&hostname, true) {
+            Some(f) => {
+                println!("{hostname}.local = {} (SSH {})", f.ip, if f.ssh { "open" } else { "closed" });
+                for (name, records) in [("first start", &f.setup), ("platform", &f.platform)] {
+                    let text = records
+                        .as_ref()
+                        .map(|r| r.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" "));
+                    println!("{name}: {}", text.as_deref().unwrap_or("(no record)"));
+                }
+            }
             None => bail!("{hostname}.local not found on this network"),
         },
+        Cmd::Components => {
+            let offer = platform::offer()?;
+            println!("FIBER platform {} ({})", offer.release.version, offer.release.installer_url());
+            for c in &offer.components {
+                let requires = if c.requires.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (requires {})", c.requires.join(", "))
+                };
+                let default = if offer.default.contains(&c.id) { "*" } else { " " };
+                println!("{default} {:<11} {}{requires}", c.id, c.title);
+            }
+            println!("* installed when --components is not given");
+        }
     }
     Ok(())
 }
@@ -195,7 +234,17 @@ fn flash_cmd(a: FlashArgs, cancel: &Cancel) -> Result<()> {
         wifi,
         country: a.country.to_uppercase(),
         timezone: a.timezone,
-        install_fiber: !a.no_fiber_software,
+        components: match a.components {
+            None => platform::DEFAULT_CHOICE.map(String::from).to_vec(),
+            Some(list) if list.iter().any(|c| c == "none") => Vec::new(),
+            Some(list) => list.into_iter().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect(),
+        },
+        mqtt_lan: a.mqtt_lan,
+        minipcie: match a.minipcie {
+            Card::None => MiniPcie::None,
+            Card::Lte => MiniPcie::Lte,
+            Card::Rak5146 => MiniPcie::Rak5146,
+        },
     };
     settings.validate()?;
     let image = prepared(a.file.as_deref(), cancel)?;

@@ -2,6 +2,7 @@
 import { apiReady, type Api } from "./api";
 import { COUNTRY_CODES } from "./countries";
 import { t } from "./i18n/index.svelte";
+import { stage, toggle, type Stage } from "./platform";
 import { prefs } from "./prefs.svelte";
 import type {
   AccessStatus,
@@ -10,6 +11,7 @@ import type {
   FlashReport,
   Found,
   JobEvent,
+  MiniPcie,
   Phase,
   Prepared,
   Release,
@@ -41,6 +43,9 @@ export const STEP_ICONS: Record<StepId, string> = {
 /** What happens with Wi-Fi: set now, set later from the phone app, or not used. The Ethernet
  * cable is no choice: it always works (DHCP), whatever is chosen here. */
 export type Network = "wifi" | "phone" | "none";
+/** Whether "Wi-Fi later from my phone" is offered. It needs the platform's Bluetooth, which
+ * comes with its task T29; until then the choice is hidden. */
+export const PHONE_SETUP = false;
 
 /** How many FIBERs can be written at once (the app's backend holds the same limit). */
 export const MAX_DEVICES = 8;
@@ -119,7 +124,11 @@ class Wizard {
     country: "CZ",
     timezone: "",
     useSshKey: true,
-    installFiber: true,
+    /** The ticked components of the FIBER platform, with what they require; filled from the
+     * release's default when the app starts. None: a plain Raspberry Pi OS. */
+    components: [] as string[],
+    mqttLan: false,
+    minipcie: "none" as MiniPcie,
   });
   /** A field shows its error only after the user left it or pressed Next. */
   touched = $state<Record<string, boolean>>({});
@@ -144,10 +153,16 @@ class Wizard {
     password: string;
     network: Network;
     ssid: string;
-    installFiber: boolean;
+    components: string[];
+    mqttLan: boolean;
   } | null>(null);
   /** Where each written FIBER was found on the network, by its name. */
   found = $state.raw<Record<string, Found>>({});
+  /** How far each written FIBER's first start is, by its name. */
+  stages = $state.raw<Record<string, Stage>>({});
+  /** A stage that ends the installation is shown once it was read twice in a row: while Avahi
+   * registers a changed record it answers nothing for a moment, which can look like the end. */
+  private ending: Record<string, Stage> = {};
   searchSince = $state(0);
   /** A newer version of FIBER Setup, when there is one. */
   update = $state.raw<Release | null>(null);
@@ -171,6 +186,7 @@ class Wizard {
       this.form.country = COUNTRY_CODES.includes(info.defaults.country) ? info.defaults.country : "CZ";
       this.form.timezone = info.defaults.timezone ?? "";
       this.form.useSshKey = !!info.defaults.ssh_key;
+      this.form.components = info.platform?.default ?? [];
       await this.api.onImage(
         (e) => apply(this.image, e),
         (d) => {
@@ -244,12 +260,22 @@ class Wizard {
     }
   }
 
+  /** Whether the chosen settings install the FIBER platform. */
+  get installFiber(): boolean {
+    return this.form.components.length > 0;
+  }
+
+  /** Ticks or unticks a component; what it requires comes with it. */
+  tick(id: string, on: boolean) {
+    this.form.components = toggle(id, on, this.form.components, this.info?.platform?.components ?? []);
+  }
+
   /** Mirrors `Settings::validate` in Rust, which has the last word. */
   get errors(): Record<string, string> {
     const f = this.form;
     const e: Record<string, string> = {};
-    // With the FIBER software the name comes from the serial number; the field is not shown.
-    if (!f.installFiber && !HOST.test(f.hostname)) e.hostname = "hostname";
+    // With the FIBER platform the name comes from the serial number; the field is not shown.
+    if (!this.installFiber && !HOST.test(f.hostname)) e.hostname = "hostname";
     if (!USER.test(f.username) || SYSTEM_USERS.includes(f.username)) e.username = "user";
     if (!f.password) e.password = "password";
     else if (f.password !== f.password2) e.password2 = "passwordAgain";
@@ -261,22 +287,25 @@ class Wizard {
     }
     if (!COUNTRY_CODES.includes(f.country)) e.country = "country";
     if (f.timezone.trim() && !TIMEZONE.test(f.timezone.trim())) e.timezone = "timezone";
-    if (f.network === "phone" && !f.installFiber) e.network = "phone";
+    if (f.network === "phone" && !this.installFiber) e.network = "phone";
     return e;
   }
 
   settings(): Settings {
     const f = this.form;
     return {
-      // Only used with the FIBER software when the serial number is unknown.
-      hostname: f.installFiber && !HOST.test(f.hostname) ? "fiber" : f.hostname,
+      // Only used with the FIBER platform when the serial number is unknown.
+      hostname: this.installFiber && !HOST.test(f.hostname) ? "fiber" : f.hostname,
       username: f.username,
       password: f.password,
       ssh_key: f.useSshKey ? (this.info?.defaults.ssh_key ?? null) : null,
       wifi: f.network === "wifi" ? { ssid: f.ssid, password: f.wifiPassword, hidden: f.hidden } : null,
       country: f.country,
       timezone: f.timezone.trim() || null,
-      install_fiber: f.installFiber,
+      components: f.components,
+      // The network listener is Mosquitto's: without it there is nothing to open.
+      mqtt_lan: f.mqttLan && f.components.includes("mosquitto"),
+      minipcie: this.installFiber ? f.minipcie : "none",
     };
   }
 
@@ -406,14 +435,15 @@ class Wizard {
       password: f.password,
       network: f.network,
       ssid: f.ssid,
-      installFiber: f.installFiber,
+      components: f.components,
+      mqttLan: f.mqttLan && f.components.includes("mosquitto"),
     };
-    // With the FIBER software each FIBER is named after its serial number; without it, each
+    // With the FIBER platform each FIBER is named after its serial number; without it, each
     // gets the next name after those already written.
     const already = this.done.length;
     const devices: FlashDevice[] = ports.map((port, i) => ({
       port,
-      hostname: f.installFiber ? null : this.nameAt(already + i),
+      hostname: this.installFiber ? null : this.nameAt(already + i),
     }));
     for (const port of ports) this.jobs[port] = { ...job<FlashReport>(), busy: true };
     this.batch = true;
@@ -452,30 +482,50 @@ class Wizard {
   }
 
   /** The name each written FIBER has on the network from its first start: fiber-<serial> with the
-   * FIBER software, else the one it was given. (Before anything is written: the one from the
+   * FIBER platform, else the one it was given. (Before anything is written: the one from the
    * settings.) */
   get names(): string[] {
     const names = this.done.map((d) => d.report.hostname);
     return names.length > 0 ? names : [this.form.hostname];
   }
 
-  /** Looks for every written FIBER under its name, all at the same time. */
+  /** Looks for every written FIBER under its name, all at the same time; with the FIBER
+   * platform also how far its first start is. */
   async search() {
     if (!this.api) return;
     const api = this.api;
-    const looked = await Promise.all(this.names.map(async (name) => [name, await api.findDevice(name)] as const));
+    const progress = (this.written?.components ?? this.form.components).length > 0;
+    const looked = await Promise.all(this.names.map(async (name) => [name, await api.findDevice(name, progress)] as const));
     this.found = Object.fromEntries(looked.flatMap(([name, found]) => (found ? [[name, found]] : [])));
+    if (!progress) return;
+    const stages = { ...this.stages };
+    for (const [name, found] of looked) {
+      if (!found) continue;
+      const before = stages[name] ?? null;
+      const next = stage(found, before);
+      const ends = next.kind === "ready" || next.kind === "partly" || next.kind === "applyFailed";
+      const same = (a: Stage | undefined) => !!a && JSON.stringify(a) === JSON.stringify(next);
+      if (ends && before && !same(before) && !same(this.ending[name])) {
+        this.ending[name] = next;
+        continue;
+      }
+      delete this.ending[name];
+      stages[name] = next;
+    }
+    this.stages = stages;
   }
 
   /** More FIBERs with the same settings: back to the jumper, the passwords kept for this session. */
   another() {
-    // Without the FIBER software the names go on where they stopped (fiber, fiber-2, ...).
-    if (!this.form.installFiber) this.form.hostname = this.nameAt(Math.max(1, this.done.length));
+    // Without the FIBER platform the names go on where they stopped (fiber, fiber-2, ...).
+    if (!this.installFiber) this.form.hostname = this.nameAt(Math.max(1, this.done.length));
     this.written = null;
     this.api?.nextBoard?.();
     this.jobs = {};
     this.batch = false;
     this.found = {};
+    this.stages = {};
+    this.ending = {};
     this.skipped = [];
     this.reached = STEPS.indexOf("jumper");
     this.step = "jumper";

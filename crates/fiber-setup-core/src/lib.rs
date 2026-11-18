@@ -19,6 +19,7 @@ pub mod image;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod mbr;
+pub mod platform;
 pub mod rpiboot;
 #[cfg(test)]
 mod testimg;

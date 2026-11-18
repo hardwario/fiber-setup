@@ -7,9 +7,12 @@
   import Status from "../lib/components/Status.svelte";
   import Text from "../lib/components/Text.svelte";
   import { fill, t } from "../lib/i18n/index.svelte";
+  import type { Stage } from "../lib/platform";
   import { wizard } from "../lib/wizard.svelte";
 
   const f = $derived(wizard.written ?? wizard.form);
+  /** Whether the written FIBERs install the FIBER platform. */
+  const fiber = $derived(f.components.length > 0);
   let now = $state(Date.now());
 
   // Look for <name>.local every 5 s while this step is open; a search can take a few seconds.
@@ -32,21 +35,66 @@
     const s = Math.max(0, Math.round((now - wizard.searchSince) / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   });
-  // The names from the first start: fiber-<serial> with the FIBER software.
+  // The names from the first start: fiber-<serial> with the FIBER platform.
   const names = $derived(wizard.names);
   const many = $derived(names.length > 1);
   const found = $derived(names.filter((n) => wizard.found[n]).length);
   const first = $derived(wizard.found[names[0]]);
-  const hub = $derived(many && f.installFiber ? `${t().start.hubUnknown}.local` : names.map((n) => `${n}.local`).join(", "));
-  const timeline = $derived((f.installFiber ? t().start.timeline : t().start.timelinePlain).map((s) => fill(s, { hub })));
+  const hub = $derived(many && fiber ? `${t().start.hubUnknown}.local` : names.map((n) => `${n}.local`).join(", "));
+  const timeline = $derived((fiber ? t().start.timeline : t().start.timelinePlain).map((s) => fill(s, { hub })));
+
+  /** A component's name in the user's language; `common` is the platform's own first step. */
+  function title(id: string): string {
+    if (id === "common") return t().start.stage.common;
+    const own = (t().components as Record<string, { title: string } | undefined>)[id]?.title;
+    return own ?? wizard.info?.platform?.components.find((c) => c.id === id)?.title ?? id;
+  }
+  /** How far a FIBER is, in words; none before its first start could be read. */
+  function said(stage: Stage | undefined): string | null {
+    if (!stage) return null;
+    const words = t().start.stage;
+    switch (stage.kind) {
+      case "download":
+      case "restart":
+      case "network":
+      case "clock":
+        return fill(words[stage.kind], { release: stage.release });
+      case "install":
+        return stage.component
+          ? fill(words.installing, { component: title(stage.component), step: stage.step, steps: stage.steps })
+          : fill(words.install, { release: stage.release });
+      case "failed":
+        return fill(words.failed, {
+          error: (t().start.errors as Record<string, string | undefined>)[stage.error] ?? stage.error,
+        });
+      default:
+        return words[stage.kind];
+    }
+  }
+  /** The tone of a FIBER's line: done, waiting, or something to look at. */
+  function tone(stage: Stage | undefined): "info" | "good" | "warning" {
+    if (stage?.kind === "ready") return "good";
+    if (stage?.kind === "failed" || stage?.kind === "partly" || stage?.kind === "applyFailed") return "warning";
+    return "info";
+  }
+  const ended = (stage: Stage | undefined) => !!stage && ["ready", "partly", "applyFailed"].includes(stage.kind);
+  /** With the FIBER platform a FIBER is through when its installation has ended; without it, when
+   * it is on the network. */
+  const through = $derived(names.filter((n) => wizard.found[n] && (!fiber || ended(wizard.stages[n]))).length);
+  const firstStage = $derived(wizard.stages[names[0]]);
   // What happens at each point of the timeline: it starts, installs, restarts.
   const GLYPHS = ["power", "download", "refresh"];
 </script>
 
 <!-- Whether the FIBERs are on the network yet, pinned to the top of the page. -->
 {#if many}
-  <Status tone={found === names.length ? "good" : "info"} busy={found < names.length}>
+  <Status tone={through === names.length ? "good" : "info"} busy={through < names.length}>
     {fill(t().start.foundMany, { found, total: names.length })}
+  </Status>
+{:else if first && fiber}
+  <Status tone={tone(firstStage)} busy={!ended(firstStage) && firstStage?.kind !== "failed"}>
+    {fill(t().start.found, { name: `${names[0]}.local`, ip: first.ip })}
+    {said(firstStage ?? { kind: "starting" })}
   </Status>
 {:else}
   <Status tone={first ? "good" : "info"} busy={!first}>
@@ -61,12 +109,14 @@
     <ul class="devices">
       {#each names as name (name)}
         {@const at = wizard.found[name]}
+        {@const stage = wizard.stages[name]}
         <li class:there={!!at}>
           <div class="who">
-            <Icon name={at ? "circle-check" : "search"} size={15} />
+            <Icon name={at ? (fiber && !ended(stage) ? "loader" : "circle-check") : "search"} size={15} />
             <span class="mono">{name}.local</span>
             <span class="where">{at ? at.ip : t().start.rowLooking}</span>
           </div>
+          {#if at && fiber}<div class="stage {tone(stage)}">{said(stage ?? { kind: "starting" })}</div>{/if}
           {#if at?.ssh}<CopyCommand text={`ssh ${f.username}@${name}.local`} />{/if}
         </li>
       {/each}
@@ -81,7 +131,7 @@
 {#if found < names.length}
   <p class="muted small">
     {fill(t().start.notFound, { time: elapsed })}
-    {f.installFiber ? t().start.sameNetwork : t().start.sameNetworkPlain}
+    {fiber ? t().start.sameNetwork : t().start.sameNetworkPlain}
   </p>
 {/if}
 
@@ -93,9 +143,9 @@
   </ol>
 </section>
 
-<!-- Only with the FIBER software: it is what drives the display and its buttons, and what the
+<!-- Only with the FIBER platform: it is what drives the display and its buttons, and what the
      install log belongs to. A plain Raspberry Pi OS shows nothing there. -->
-{#if f.installFiber}
+{#if fiber}
   <section class="card pad display">
     <div class="about">
       <h2><Icon name="monitor" size={16} /> {t().start.displayTitle}</h2>
@@ -164,6 +214,15 @@
   }
   .there .who > :global(svg) {
     color: var(--good);
+  }
+  /* How far it is, under its name. */
+  .stage {
+    padding-left: 23px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .stage.warning {
+    color: var(--warning);
   }
   p {
     margin: 0;

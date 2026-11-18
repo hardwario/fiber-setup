@@ -13,6 +13,7 @@ import type {
   Found,
   ImageStatus,
   JobEvent,
+  Offer,
   Phase,
   Prepared,
   Release,
@@ -35,7 +36,8 @@ export interface Api {
    * app's sentence for macOS's password dialog, in the user's language. */
   flashStart(settings: Settings, devices: FlashDevice[], together: boolean, prompt: string): Promise<void>;
   cancel(): Promise<void>;
-  findDevice(hostname: string): Promise<Found | null>;
+  /** Looks for `<hostname>.local`; with `progress` also asks it for its two Avahi records. */
+  findDevice(hostname: string, progress: boolean): Promise<Found | null>;
   openLink(url: string): Promise<void>;
   copyText(text: string): Promise<void>;
   onImage(cb: (e: JobEvent) => void, done: (d: Done<Prepared>) => void): Promise<Unlisten>;
@@ -82,7 +84,7 @@ async function tauriApi(): Promise<Api> {
     usbBoards: () => invoke("usb_boards"),
     flashStart: (settings, devices, together, prompt) => invoke("flash_start", { settings, devices, together, prompt }),
     cancel: () => invoke("cancel"),
-    findDevice: (hostname) => invoke("find_device", { hostname }),
+    findDevice: (hostname, progress) => invoke("find_device", { hostname, progress }),
     openLink: (url) => invoke("open_link", { url }),
     // The system's clipboard through the app: the page's own is switched off in the Linux web view.
     copyText: async (text) => {
@@ -106,8 +108,75 @@ async function tauriApi(): Promise<Api> {
   };
 }
 
+/** The release and the components the simulated FIBER offers: those of `image/components.yaml`
+ * (a test keeps the two alike), without their sizes, which are not measured yet. */
+export const SIMULATED_OFFER: Offer = {
+  release: { version: "0.1.0", installer_sha256: "623784adbdb5b660a51446f9560f253f4416b0beacd65d7d452512d5fc9dd72f" },
+  components: [
+    { id: "base", title: "Basic system configuration", about: "", requires: [], suggests: [], ports: [], size: null },
+    {
+      id: "mosquitto",
+      title: "Mosquitto",
+      about: "",
+      requires: [],
+      suggests: [],
+      ports: [
+        { port: 1883, listen: "loopback", when: null },
+        { port: 1884, listen: "network", when: "mqtt.lan" },
+      ],
+      size: null,
+    },
+    { id: "agent", title: "FIBER agent", about: "", requires: ["base", "mosquitto"], suggests: [], ports: [], size: null },
+    {
+      id: "node-red",
+      title: "Node-RED",
+      about: "",
+      requires: ["mosquitto"],
+      suggests: ["agent"],
+      ports: [{ port: 1880, listen: "network", when: null }],
+      size: null,
+    },
+    {
+      id: "chirpstack",
+      title: "ChirpStack",
+      about: "",
+      requires: ["mosquitto"],
+      suggests: [],
+      ports: [{ port: 8080, listen: "network", when: null }],
+      size: null,
+    },
+  ],
+  default: ["base", "mosquitto", "agent", "node-red"],
+};
+
+/** What the simulated FIBER's records say on each look after it is found: the script's steps,
+ * the platform's apply component by component, the restart (when it is not found), and the end. */
+function simulatedProgress(look: number, components: string[]): Pick<Found, "setup" | "platform"> | null {
+  const release = SIMULATED_OFFER.release.version;
+  const steps = components.length + 1;
+  const setup = (state: string) => ({ state, release });
+  const platform = (state: string, step: number) => ({
+    state,
+    step: `${step}/${steps}`,
+    component: state === "running" ? (["common", ...components][step - 1] ?? "") : "",
+    release,
+  });
+  const order: (Pick<Found, "setup" | "platform"> | null)[] = [
+    { setup: null, platform: null },
+    { setup: setup("network"), platform: null },
+    { setup: setup("download"), platform: null },
+    { setup: setup("install"), platform: null },
+    ...Array.from({ length: steps }, (_, i) => ({ setup: setup("install"), platform: platform("running", i + 1) })),
+    { setup: setup("restart"), platform: platform("done", steps) },
+    null,
+    { setup: null, platform: platform("done", steps) },
+  ];
+  return order[Math.min(look, order.length - 1)];
+}
+
 /** A FIBER that appears on USB a few seconds after the Connect step opens, stays in boot mode for a
- * few seconds after writing (until "RESET") and is found on the network on the third look.
+ * few seconds after writing (until "RESET"), is found on the network on the third look, and then
+ * goes through its first start look by look.
  * `openLink` and `copyText` are the app's own in demo mode (the browser's in a plain browser).
  * In the address: `?boards=4` for that many FIBERs (up to 9, one more than can be written at
  * once), `?fail=1-2` for a FIBER whose first write fails, `?update=available` for a newer version
@@ -149,10 +218,13 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
   /** How often each name was looked for on the network. */
   const searches = new Map<string, number>();
   let cancelled = false;
+  /** The components the last write asked for, for the first start's records. */
+  let chosen: string[] = [];
   const appInfo = async (): Promise<AppInfo> => ({
     version: "1.2.0",
     os: "linux",
     image,
+    platform: SIMULATED_OFFER,
     tools_found: true,
     defaults: {
       hostname: "fiber",
@@ -227,8 +299,9 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
       cancelled = false;
       const [cb, done, finished] = flashCbs ?? [() => {}, () => {}, () => {}];
       const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      chosen = settings.components;
       const nameOf = (d: FlashDevice) =>
-        settings.install_fiber ? `fiber-${serialOf(d.port).slice(-8)}` : (d.hostname ?? settings.hostname);
+        settings.components.length > 0 ? `fiber-${serialOf(d.port).slice(-8)}` : (d.hostname ?? settings.hostname);
       /** Started over USB, its memory found: as the app does it, for all of them at once. */
       const start = async (d: FlashDevice) => {
         const log = (line: string) => cb(d.port, { type: "log", line });
@@ -291,14 +364,18 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
     cancel: async () => {
       cancelled = true;
     },
-    findDevice: async (hostname) => {
+    findDevice: async (hostname, progress) => {
       await new Promise((r) => setTimeout(r, 900));
       // Each on its third look, at an address of its own.
       if (!searches.has(hostname)) searches.set(hostname, 0);
       const looks = (searches.get(hostname) ?? 0) + 1;
       searches.set(hostname, looks);
       const index = [...searches.keys()].indexOf(hostname);
-      return looks >= 3 + index ? { ip: `192.168.1.${57 + index}`, ssh: true } : null;
+      const first = 3 + index;
+      if (looks < first) return null;
+      if (!progress) return { ip: `192.168.1.${57 + index}`, ssh: true, setup: null, platform: null };
+      const records = simulatedProgress(looks - first, chosen);
+      return records && { ip: `192.168.1.${57 + index}`, ssh: true, ...records };
     },
     openLink:
       openLink ??

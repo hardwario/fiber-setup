@@ -5,7 +5,9 @@
   import { countryChoices } from "../lib/countries";
   import { timezoneChoices } from "../lib/timezones";
   import { fill, i18n, t } from "../lib/i18n/index.svelte";
-  import { wizard, type Network } from "../lib/wizard.svelte";
+  import { neededBy } from "../lib/platform";
+  import type { Component, MiniPcie } from "../lib/types";
+  import { PHONE_SETUP, wizard, type Network } from "../lib/wizard.svelte";
 
   const f = $derived(wizard.form);
   const info = $derived(wizard.info);
@@ -15,13 +17,21 @@
     // The default first: what works with nothing more to enter.
     { value: "none", icon: "ethernet", desc: "noneDesc" },
     { value: "wifi", icon: "wifi", desc: "wifiDesc" },
-    { value: "phone", icon: "phone", desc: "phoneDesc" },
+    ...(PHONE_SETUP ? [{ value: "phone" as Network, icon: "phone", desc: "phoneDesc" as const }] : []),
   ];
-  /** Wi-Fi from the phone app comes with the FIBER software: without it, that choice is off, and
-   * if it was the chosen one, the choice falls back to no Wi-Fi. */
-  function softwareChanged(install: boolean) {
-    if (!install && f.network === "phone") f.network = "none";
+  const offer = $derived(info?.platform ?? null);
+  /** Its name and sentence in the user's language, or the release's English ones. */
+  function text(c: Component): { title: string; about: string } {
+    const own = (t().components as Record<string, { title: string; about: string } | undefined>)[c.id];
+    return own ?? { title: c.title, about: c.about };
   }
+  /** Ticks or unticks a component. Wi-Fi from the phone app comes with the FIBER agent: without
+   * it, that choice falls back to no Wi-Fi. */
+  function tick(id: string, on: boolean) {
+    wizard.tick(id, on);
+    if (!f.components.includes("agent") && f.network === "phone") f.network = "none";
+  }
+  const CARDS: MiniPcie[] = ["none", "lte", "rak5146"];
 
   /** The message for a field, once the user has left it (or pressed Next). */
   function err(field: string): string | null {
@@ -44,7 +54,7 @@
 <section class="card pad">
   <h2><Icon name="monitor" size={16} /> {t().settings.device}</h2>
   <div class="lines">
-    {#if f.installFiber}
+    {#if wizard.installFiber}
       <div class="line">
         <span class="name">{t().settings.hostname}</span>
         <div class="value">
@@ -141,16 +151,56 @@
   </div>
 </section>
 
-<section class="card pad">
-  <h2><Icon name="package" size={16} /> {t().settings.software}</h2>
-  <label class="check">
-    <input type="checkbox" bind:checked={f.installFiber} onchange={(e) => softwareChanged(e.currentTarget.checked)} />
-    <span>
-      {t().settings.installFiber}
-      <span class="hint block">{t().settings.installFiberHint}</span>
-    </span>
-  </label>
-</section>
+{#if offer}
+  <section class="card pad">
+    <h2><Icon name="package" size={16} /> {t().settings.software}</h2>
+    <p class="muted">{fill(t().settings.softwareLead, { version: offer.release.version })}</p>
+    <div class="components">
+      {#each offer.components as c (c.id)}
+        {@const on = f.components.includes(c.id)}
+        {@const needs = neededBy(c.id, f.components, offer.components)}
+        <div class="component" class:on>
+          <label class="check">
+            <input type="checkbox" checked={on} disabled={needs.length > 0} onchange={(e) => tick(c.id, e.currentTarget.checked)} />
+            <span class="text">
+              <span class="title">{text(c).title}</span>
+              {#if c.size?.download}<span class="hint">{fill(t().settings.download, { size: c.size.download })}</span>{/if}
+              <span class="hint block">{text(c).about}</span>
+              {#if needs.length > 0}
+                <span class="hint block"
+                  >{fill(t().settings.neededBy, {
+                    names: needs.map((id) => text(offer.components.find((k) => k.id === id) ?? c).title).join(", "),
+                  })}</span
+                >
+              {/if}
+            </span>
+          </label>
+          {#if on && c.ports.some((p) => p.when === "mqtt.lan")}
+            <label class="check more-check">
+              <input type="checkbox" bind:checked={f.mqttLan} />
+              <span>{t().settings.mqttLan}</span>
+            </label>
+          {/if}
+        </div>
+      {/each}
+    </div>
+    {#if wizard.installFiber}
+      <div class="lines">
+        <div class="line">
+          <label class="name" for="minipcie">{t().settings.minipcie}</label>
+          <div class="value">
+            <select id="minipcie" class="input wide" bind:value={f.minipcie}>
+              {#each CARDS as card (card)}<option value={card}>{t().settings.cards[card]}</option>{/each}
+            </select>
+            <span class="hint">{t().settings.minipcieHint}</span>
+          </div>
+        </div>
+      </div>
+    {:else}
+      <div class="note"><Icon name="info" size={16} /><span>{t().settings.nothing}</span></div>
+    {/if}
+  </section>
+{/if}
 
 <section class="card pad">
   <h2><Icon name="globe" size={16} /> {t().settings.network}</h2>
@@ -158,7 +208,7 @@
   <div class="choices" role="radiogroup" aria-label={t().settings.network}>
     {#each NETWORKS as n (n.value)}
       {@const chosen = f.network === n.value}
-      {@const off = n.value === "phone" && !f.installFiber}
+      {@const off = n.value === "phone" && !f.components.includes("agent")}
       <div class="choice" class:chosen class:off>
         <label class="head">
           <input type="radio" name="network" value={n.value} bind:group={f.network} disabled={off} />
@@ -358,6 +408,31 @@
   .check input {
     margin-top: 3px;
     accent-color: var(--accent);
+  }
+  /* The components: one line each, its sentence below its name. */
+  .components {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .component {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .component .text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+  }
+  .component .text .block {
+    flex-basis: 100%;
+  }
+  /* A setting of the component, under its sentence. */
+  .more-check {
+    padding-left: 24px;
+    font-size: 13px;
   }
   p {
     margin: 0;

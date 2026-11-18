@@ -4,19 +4,22 @@
 //! `network-config` and `meta-data`, plus `ds=nocloud;i=<id>` and the Wi-Fi country on the
 //! kernel command line.
 //!
-//! With "install the FIBER software" on, `fiber-install.sh` goes onto the boot partition too and
-//! cloud-init runs it once, unattended: it waits for the network and the clock, then runs
-//! `curl -fsSL <fiber-agent>/main/bootstrap.sh | sudo bash`. The FIBER restarts only when that
-//! finished OK. The FIBER software names
-//! the FIBER `fiber-<last 8 characters of the CM4 serial>`; written over USB, it has that name
+//! With components of the FIBER platform chosen, two more files go onto the boot partition: the
+//! first-start script `fiber-install.sh`, with the release FIBER Setup names written into it
+//! ([`install_script`]), and the seed `fiber-seed.yaml` with the choice ([`platform::seed`]).
+//! cloud-init starts the script as a service that tries again until it has worked: it waits for
+//! the network, sets the clock forward, downloads the release's installer, checks its sha256 and
+//! runs it. With the platform, the FIBER is named `fiber-<last 8 characters of the CM4 serial>`
 //! from the first start ([`start_name`]).
 
+use crate::catalog::{self, PlatformRelease};
+use crate::platform::{self, MiniPcie, SEED_NAME};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Write};
 
-/// The first-start installer, built into the app.
-pub const INSTALL_SCRIPT: &str = include_str!("../../../image/fiber-install.sh");
+/// The first-start script, built into the app, before the release is written into it.
+const INSTALL_SCRIPT: &str = include_str!("../../../image/fiber-install.sh");
 pub const INSTALL_SCRIPT_NAME: &str = "fiber-install.sh";
 /// Files of earlier FIBER Setup versions that a re-personalised image must not keep.
 const OLD_FILES: [&str; 1] = ["fiber-cm4-setup.sh"];
@@ -72,11 +75,24 @@ pub struct Settings {
     pub country: String,
     #[serde(default)]
     pub timezone: Option<String>,
-    /// Run the FIBER setup script on the first start (needs the internet).
-    pub install_fiber: bool,
+    /// The components of the FIBER platform to install on the first start (needs the internet);
+    /// what they require comes along. None: a plain Raspberry Pi OS.
+    #[serde(default)]
+    pub components: Vec<String>,
+    /// The platform's `mqtt.lan`: MQTT for the network too, on port 1884 with the login.
+    #[serde(default)]
+    pub mqtt_lan: bool,
+    /// The platform's `hardware.minipcie`: the card in the mini-PCIe slot.
+    #[serde(default)]
+    pub minipcie: MiniPcie,
 }
 
 impl Settings {
+    /// Whether the FIBER platform is installed on the first start.
+    pub fn install_fiber(&self) -> bool {
+        !self.components.is_empty()
+    }
+
     pub fn validate(&self) -> Result<()> {
         let h = &self.hostname;
         let host_ok = !h.is_empty()
@@ -127,6 +143,7 @@ impl Settings {
         {
             bail!("the time zone is not valid");
         }
+        platform::with_requirements(&self.components, &platform::components()?)?;
         Ok(())
     }
 }
@@ -136,7 +153,7 @@ impl Settings {
 /// they are need escaping too: the YAML parsers on the FIBER (PyYAML in cloud-init, libyaml in
 /// netplan) refuse DEL, the C1 controls, U+FFFE and U+FFFF, and take U+0085, U+2028 and U+2029
 /// for the end of a line.
-fn q(s: &str) -> String {
+pub(crate) fn q(s: &str) -> String {
     let json = serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
     let mut out = String::with_capacity(json.len());
     for c in json.chars() {
@@ -163,19 +180,19 @@ pub fn hash_password(password: &str) -> Result<String> {
     sha_crypt::sha512_simple(password, &params).map_err(|e| anyhow::anyhow!("hashing the password: {e:?}"))
 }
 
-/// The name a FIBER gives itself once the FIBER software runs: `fiber-` and the last 8 characters
-/// of its CM4 serial (fiber-agent's `set-hostname.sh`).
+/// The name of a FIBER with the FIBER platform: `fiber-` and the last 8 characters of its CM4
+/// serial.
 pub fn hub_name(cm4_serial: &str) -> Option<String> {
     let s = cm4_serial.trim().to_lowercase();
     (s.len() >= 8 && s.bytes().all(|b| b.is_ascii_hexdigit())).then(|| format!("fiber-{}", &s[s.len() - 8..]))
 }
 
-/// The name the FIBER starts with. With the FIBER software it is the one that software gives it
-/// ([`hub_name`]), so the FIBER keeps one name (and SSH asks about its key once); without it, or
-/// with no serial number, the one from the settings.
+/// The name the FIBER gets. With the FIBER platform it is [`hub_name`], set by cloud-init on the
+/// first start and never changed after; without it, or with no serial number, the one from the
+/// settings.
 pub fn start_name(settings: &Settings, cm4_serial: Option<&str>) -> String {
     match cm4_serial.and_then(hub_name) {
-        Some(name) if settings.install_fiber => name,
+        Some(name) if settings.install_fiber() => name,
         _ => settings.hostname.clone(),
     }
 }
@@ -193,10 +210,9 @@ pub fn render(s: &Settings, instance_id: &str, password_hash: &str) -> Files {
     u.push_str("#cloud-config\n");
     u.push_str(&format!("# Written by FIBER Setup {}.\n", crate::VERSION));
     u.push_str("manage_resolv_conf: false\n\n");
-    // With the FIBER software, cloud-init must leave /etc/hosts alone: the software makes it a link
-    // and names the FIBER after its serial, and cloud-init would rewrite it at every start.
-    let manage_hosts = if s.install_fiber { "false" } else { "true" };
-    u.push_str(&format!("hostname: {}\nmanage_etc_hosts: {manage_hosts}\n", q(&s.hostname)));
+    // The name is final from the first start (the platform does not rename the FIBER), so
+    // cloud-init keeps /etc/hosts in step with it, and sudo resolves it.
+    u.push_str(&format!("hostname: {}\nmanage_etc_hosts: true\n", q(&s.hostname)));
     if let Some(tz) = &s.timezone {
         u.push_str(&format!("timezone: {}\n", q(tz)));
     }
@@ -211,11 +227,11 @@ pub fn render(s: &Settings, instance_id: &str, password_hash: &str) -> Files {
     u.push_str("ssh_pwauth: true\n");
     // SSH first: it is up during the long setup run and after a failure.
     u.push_str("runcmd:\n  - [ systemctl, enable, --now, ssh ]\n");
-    if s.install_fiber {
-        // The script restarts the FIBER itself when it succeeded (Raspberry Pi OS's cloud-init has no
-        // power_state module), retries at later starts when it failed, and copies its log to the
-        // boot partition either way.
-        u.push_str(&format!("  - [ bash, /boot/firmware/{INSTALL_SCRIPT_NAME} ]\n"));
+    if s.install_fiber() {
+        // The script puts its service in place and starts it without waiting: the service tries
+        // again after a failure, restarts the FIBER when the installation asks (Raspberry Pi OS's
+        // cloud-init has no power_state module), and copies its log to the boot partition.
+        u.push_str(&format!("  - [ bash, /boot/firmware/{INSTALL_SCRIPT_NAME}, --start ]\n"));
     }
 
     let mut n = String::new();
@@ -246,6 +262,13 @@ pub fn render(s: &Settings, instance_id: &str, password_hash: &str) -> Files {
         meta_data: format!("instance-id: {instance_id}\n"),
         cmdline: format!("ds=nocloud;i={instance_id} cfg80211.ieee80211_regdom={}", s.country),
     }
+}
+
+/// The first-start script with the release written into it.
+pub fn install_script(release: &PlatformRelease) -> String {
+    INSTALL_SCRIPT
+        .replace("@PLATFORM_VERSION@", release.version)
+        .replace("@INSTALLER_SHA256@", release.installer_sha256)
 }
 
 /// `cmdline.txt` with our tokens at the end; an earlier `ds=` or regulatory domain is replaced,
@@ -285,10 +308,15 @@ pub fn personalise(boot: Vec<u8>, s: &Settings) -> Result<(Vec<u8>, String)> {
             write_file(&root, "user-data", files.user_data.as_bytes())?;
             write_file(&root, "network-config", files.network_config.as_bytes())?;
             write_file(&root, "meta-data", files.meta_data.as_bytes())?;
-            if s.install_fiber {
-                write_file(&root, INSTALL_SCRIPT_NAME, INSTALL_SCRIPT.as_bytes())?;
-            } else {
-                let _ = root.remove(INSTALL_SCRIPT_NAME);
+            match platform::seed(s, &catalog::FIBER_PLATFORM)? {
+                Some(seed) => {
+                    write_file(&root, INSTALL_SCRIPT_NAME, install_script(&catalog::FIBER_PLATFORM).as_bytes())?;
+                    write_file(&root, SEED_NAME, seed.as_bytes())?;
+                }
+                None => {
+                    let _ = root.remove(INSTALL_SCRIPT_NAME);
+                    let _ = root.remove(SEED_NAME);
+                }
             }
             for name in OLD_FILES.iter().chain([&SETUP_LOG_NAME]) {
                 let _ = root.remove(name);
@@ -300,7 +328,7 @@ pub fn personalise(boot: Vec<u8>, s: &Settings) -> Result<(Vec<u8>, String)> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn sample() -> Settings {
@@ -312,7 +340,9 @@ mod tests {
             wifi: Some(Wifi { ssid: "Office \"5G\"".into(), password: "pa:ss;word\\x".into(), hidden: false }),
             country: "CZ".into(),
             timezone: Some("Europe/Prague".into()),
-            install_fiber: true,
+            components: vec!["agent".into(), "node-red".into()],
+            mqtt_lan: false,
+            minipcie: MiniPcie::None,
         }
     }
 
@@ -348,8 +378,8 @@ mod tests {
         let f = render(&sample(), "fiber-setup-1-abcd", "$6$salt$hash");
         assert!(f.user_data.starts_with("#cloud-config\n"));
         assert!(f.user_data.contains("passwd: \"$6$salt$hash\""));
-        assert!(f.user_data.contains("[ bash, /boot/firmware/fiber-install.sh ]"));
-        assert!(f.user_data.contains("manage_etc_hosts: false"));
+        assert!(f.user_data.contains("[ bash, /boot/firmware/fiber-install.sh, --start ]"));
+        assert!(f.user_data.contains("manage_etc_hosts: true"));
         assert!(!f.user_data.contains("power_state"));
         assert!(f.network_config.contains("\"Office \\\"5G\\\"\":"));
         assert!(f.network_config.contains("password: \"pa:ss;word\\\\x\""));
@@ -402,7 +432,7 @@ mod tests {
     #[test]
     fn no_fiber_install_means_no_script_and_no_restart() {
         let mut s = sample();
-        s.install_fiber = false;
+        s.components.clear();
         s.wifi = None;
         let f = render(&s, "id", "h");
         assert!(!f.user_data.contains(INSTALL_SCRIPT_NAME));
@@ -419,10 +449,30 @@ mod tests {
         );
     }
 
+    /// The script downloads the installer of the release the catalog names, checks it by the
+    /// catalog's sha256, and nothing is left to fill in.
     #[test]
-    fn install_script_runs_the_public_installer() {
-        assert!(INSTALL_SCRIPT.contains(&format!("INSTALLER={}\n", crate::catalog::FIBER_INSTALLER)));
-        assert!(INSTALL_SCRIPT.contains(r#""$INSTALLER" | sudo FIBER_NO_REBOOT=1 bash"#));
+    fn install_script_runs_the_installer_the_catalog_names() {
+        let release = catalog::FIBER_PLATFORM;
+        let script = install_script(&release);
+        assert!(script.contains(&format!("VERSION=\"{}\"\n", release.version)));
+        assert!(script.contains(&format!("INSTALLER_SHA256=\"{}\"\n", release.installer_sha256)));
+        let url = script.replace("${VERSION}", release.version);
+        assert!(url.contains(&release.installer_url()), "the script's address is not the catalog's");
+        for placeholder in ["@PLATFORM_VERSION@", "@INSTALLER_SHA256@"] {
+            assert_eq!(INSTALL_SCRIPT.matches(placeholder).count(), 1, "{placeholder}");
+            assert!(!script.contains(placeholder), "{placeholder} is left");
+        }
+        assert!(script.contains(r#"FIBER_NO_REBOOT=1 bash "$STATE/install.sh""#));
+        assert_eq!(release.installer_sha256.len(), 64);
+        assert!(release.installer_sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn unknown_components_are_refused() {
+        let mut s = sample();
+        s.components = vec!["nodered".into()];
+        assert!(s.validate().unwrap_err().to_string().contains("no component `nodered`"));
     }
 
     #[test]
@@ -437,7 +487,7 @@ mod tests {
         let mut s = sample();
         assert_eq!(start_name(&s, Some("10000000c787cd13")), "fiber-c787cd13");
         assert_eq!(start_name(&s, None), s.hostname);
-        s.install_fiber = false;
+        s.components.clear();
         assert_eq!(start_name(&s, Some("10000000c787cd13")), s.hostname);
     }
 

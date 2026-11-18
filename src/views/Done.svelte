@@ -2,11 +2,22 @@
   import CopyCommand from "../lib/components/CopyCommand.svelte";
   import Icon from "../lib/components/Icon.svelte";
   import { fill, t } from "../lib/i18n/index.svelte";
+  import { links } from "../lib/platform";
   import { wizard } from "../lib/wizard.svelte";
 
   const f = $derived(wizard.written ?? wizard.form);
-  // The names they were written with: fiber-<serial> with the FIBER software.
+  const offer = $derived(wizard.info?.platform ?? null);
+  // The names they were written with: fiber-<serial> with the FIBER platform.
   const names = $derived(wizard.names);
+  /** The chosen components by their names, in the user's language. */
+  const chosen = $derived(
+    (offer?.components ?? [])
+      .filter((c) => f.components.includes(c.id))
+      .map((c) => (t().components as Record<string, { title: string } | undefined>)[c.id]?.title ?? c.title)
+      .join(", "),
+  );
+  /** Where the chosen components are reached: by name, a FIBER's own page each. */
+  const pages = $derived(names.map((name) => ({ name, links: links(f.components, f.mqttLan, `${name}.local`) })));
   // One FIBER: also by its address, when it was found.
   const found = $derived(names.length === 1 ? wizard.found[names[0]] : undefined);
   // The password it asks for: hidden until the user wants to see it, whatever its length.
@@ -47,6 +58,31 @@
   </div>
 </section>
 
+{#if pages.some((p) => p.links.length > 0)}
+  <section class="card pad">
+    <h2><Icon name="globe" size={16} /> {t().done.servicesTitle}</h2>
+    <p class="muted">{t().done.servicesHint}</p>
+    {#each pages as page (page.name)}
+      {#if pages.length > 1}<div class="mono fiber">{page.name}.local</div>{/if}
+      <ul class="links">
+        {#each page.links as l (l.href)}
+          <li>
+            <span class="k">{t().done.links[l.label]}</span>
+            {#if l.href.startsWith("http")}
+              <button class="link mono" type="button" onclick={() => wizard.api?.openLink(l.href)}
+                >{l.href} <Icon name="external" size={12} /></button
+              >
+            {:else}
+              <span class="mono">{l.href}</span>
+            {/if}
+            {#if l.user === "admin"}<span class="muted small">{t().done.admin}</span>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/each}
+  </section>
+{/if}
+
 <section class="card pad summary">
   <div class="row">
     <Icon name="monitor" size={15} /><span class="k">{t().done.name}</span><span class="mono"
@@ -64,7 +100,9 @@
   </div>
   <div class="row">
     <Icon name="package" size={15} /><span class="k">{t().done.software}</span><span
-      >{f.installFiber ? t().done.softwareFiber : t().done.softwarePlain}</span
+      >{f.components.length > 0
+        ? fill(t().done.softwareFiber, { version: offer?.release.version ?? "", components: chosen })
+        : t().done.softwarePlain}</span
     >
   </div>
 </section>
@@ -141,6 +179,45 @@
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+  }
+  /* A component's page: its name, its address, and ChirpStack's own user name. */
+  .links {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .links li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    overflow-wrap: anywhere;
+  }
+  .links .k {
+    flex: 0 0 110px;
+    color: var(--text-muted);
+  }
+  .fiber {
+    font-weight: 500;
+    margin-top: 4px;
+  }
+  .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
+  .small {
+    font-size: 12.5px;
   }
   p {
     margin: 0;

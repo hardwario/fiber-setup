@@ -33,8 +33,9 @@ on a Raspberry Pi Compute Module 4. Connect the FIBER to your computer with a US
 - downloads Raspberry Pi OS and checks it against its published checksum;
 - puts your settings into it: the device's name, the login, the time zone and the Wi-Fi;
 - writes it to the FIBER's built-in memory (eMMC) and reads it all back to check;
-- has the FIBER install the FIBER software by itself on its first start;
-- follows the first start and hands you the command to log in.
+- has the FIBER install the [FIBER platform](https://github.com/hardwario/fiber-platform) by itself on its
+  first start, with the components you tick;
+- follows the first start step by step, and hands you the command to log in and a link to each component.
 
 Each step says what to do, with drawings of the FIBER that show where the jumper, the cable and the buttons
 are. One FIBER or up to eight at once.
@@ -123,12 +124,12 @@ Nine steps in three parts. The step list on the left shows where you are, and *B
 |---|---|---|
 | **Prepare** | 1. Before you start | What you need and how long it takes |
 | | 2. Get the software | Raspberry Pi OS Lite (64-bit) is downloaded, checked and unpacked. Once: it is kept for the next FIBER. Your own image file works too |
-| | 3. Enter the settings | Device name, time zone, user name and password, your SSH key, the FIBER software, Wi-Fi |
+| | 3. Enter the settings | Device name, time zone, user name and password, your SSH key, the components of the FIBER platform, Wi-Fi |
 | **Write** | 4. Activate boot mode | Open the cover and move the jumper to `BOOT` |
 | | 5. Connect the FIBER | USB-B cable, power, `RESET`. The app finds the FIBER by itself |
 | | 6. Write the software | The image with your settings is written and read back, in about 5 minutes |
 | **Start** | 7. Start the FIBER | Jumper off `BOOT`, `RESET`, cover back on |
-| | 8. Follow the first start | The FIBER joins your network and installs the FIBER software, in about 10 minutes. The app looks for it on the network |
+| | 8. Follow the first start | The FIBER joins your network and installs the FIBER platform, in about 10 minutes. The app follows it on the network, step by step |
 | | 9. Log in to the system | The `ssh` command for your FIBER, with the user name and the password you chose |
 
 **Step 3: Enter the settings**
@@ -153,19 +154,25 @@ Nine steps in three parts. The step list on the left shows where you are, and *B
   passwords when it is closed.
 - **The login password is pre-filled with `fiber`.** Choose your own for a FIBER that others can reach. The
   last step shows the user name and, on a click, the password.
-- **An Ethernet cable always works:** the FIBER gets its address by DHCP. Wi-Fi is a choice: none, set now,
-  or set later from your phone in the HARDWARIO Manager app over Bluetooth (with the FIBER software).
-- **The FIBER software** is what [hardwario/fiber-agent](https://github.com/hardwario/fiber-agent) installs:
-  the FIBER runs its installer once on the first start, which needs the internet. Turned off in the
-  settings, the FIBER gets a plain Raspberry Pi OS.
-- **The name.** With the FIBER software the FIBER is `fiber-<last 8 characters of its serial number>`, on
+- **An Ethernet cable always works:** the FIBER gets its address by DHCP. Wi-Fi is a choice: none, or set
+  now. Setting it later from your phone comes with the FIBER platform's Bluetooth.
+- **The FIBER platform** is [hardwario/fiber-platform](https://github.com/hardwario/fiber-platform): the
+  board as plain Linux, Mosquitto, the FIBER agent, Node-RED and ChirpStack, each a component you tick.
+  What a component needs is ticked with it. Each FIBER Setup installs one release of it, named by version
+  and checksum, so a FIBER gets what this FIBER Setup was tested with. With nothing ticked the FIBER gets a
+  plain Raspberry Pi OS.
+- **One password.** The user name and password from the settings also open what can be reached from the
+  network: Node-RED, MQTT on port 1884 when you open it, and ChirpStack (whose user name is `admin`). They
+  travel once, in a file on the boot partition that the installer deletes after reading it.
+- **The name.** With the FIBER platform the FIBER is `fiber-<last 8 characters of its serial number>`, on
   your network `fiber-….local`. The app reads the serial number over USB before it writes, so it can show
-  the name. Without the software the FIBER keeps the name from the settings.
+  the name. Without the platform the FIBER keeps the name from the settings.
 - **Nothing else is written.** The app writes only a disk that appeared on the FIBER's own USB port and
   says it is a Compute Module 4's memory.
 - **A FIBER that does not answer** is not the end of it: the app says to press `RESET` and goes on by itself.
-- **If the first start fails,** the FIBER keeps the log in `/var/log/fiber-setup.log`, with a copy as
-  `fiber-setup.log` on its boot partition.
+- **If the first start fails,** the FIBER tries again by itself, 30 s later and at every start, and the app
+  says what failed. The log is in `/var/log/fiber-setup.log`, with a copy as `fiber-setup.log` on its boot
+  partition.
 
 ### Several FIBERs at once
 
@@ -188,7 +195,7 @@ The *Write the software* step then offers two ways:
 
 Either way all of them are started over USB first, so a bad cable or a missing jumper shows at the start. A
 FIBER that fails does not stop the others: it can be written again from the same step, and so can one
-connected later. With the FIBER software each FIBER is named after its serial number; without it they are
+connected later. With the FIBER platform each FIBER is named after its serial number; without it they are
 numbered on from the name in the settings (`fiber`, `fiber-2`, ...). The steps after the write follow every
 FIBER: which still wait for `RESET`, which are on the network, and the login command of each.
 
@@ -203,8 +210,10 @@ the question off.
 ### What has been tried
 
 On macOS, with a real FIBER: started over USB, written and read back. Not tried on a real FIBER yet: the
-Windows and the Linux builds, several FIBERs at once, and Wi-Fi from the phone. There the app has run
-against a simulated FIBER and in automated tests only. The German, Slovak and Polish texts have not been
+Windows and the Linux builds, several FIBERs at once, and the first start with the FIBER platform. There
+the app has run against a simulated FIBER and in automated tests only; the first-start script and the
+progress the app reads have also run in a container with Avahi, against a release of the platform built by
+hand. The German, Slovak and Polish texts have not been
 read by native speakers. If something does not work for you, please
 [open an issue](https://github.com/hardwario/fiber-setup/issues).
 
@@ -224,9 +233,12 @@ FIBER_SETUP_PASSWORD=... FIBER_SETUP_WIFI_PASSWORD=... \
   fiber-setup-cli flash --hostname fiber --wifi-ssid MyWifi --country CZ \
     --ssh-key ~/.ssh/id_ed25519.pub
 
+fiber-setup-cli components                    # the FIBER platform's release and its components
+fiber-setup-cli flash ... --components agent,node-red,chirpstack --mqtt-lan
+fiber-setup-cli flash ... --components none   # a plain Raspberry Pi OS
 fiber-setup-cli flash ... --to-file out.img   # the same into a file, no FIBER needed
 fiber-setup-cli inspect out.img               # the first-start files on an image or an eMMC
-fiber-setup-cli find fiber                    # look for fiber.local on this network
+fiber-setup-cli find fiber                    # look for fiber.local, and how far its first start is
 ```
 
 `fiber-setup-cli <command> --help` lists every option. The passwords come from the environment, so they do
@@ -240,9 +252,13 @@ not end up in the shell's history. To start a FIBER over USB the command line ne
    from Raspberry Pi Imager's cache when that has the same file.
 2. **The settings** go into the image's FAT boot partition before it is written: cloud-init's `user-data`,
    `network-config` and `meta-data`, and the kernel command line, the same files Raspberry Pi Imager
-   writes. With the FIBER software on, [`image/fiber-install.sh`](image/fiber-install.sh) goes there too,
-   and cloud-init runs it once on the first start: it waits for the network and the clock, then runs the
-   installer from [hardwario/fiber-agent](https://github.com/hardwario/fiber-agent).
+   writes. With components of the FIBER platform ticked, two more files go there: the choice
+   (`fiber-seed.yaml`) and [`image/fiber-install.sh`](image/fiber-install.sh), with the release written
+   into it. cloud-init starts the script as a service that tries again until it has worked: it waits for
+   the network (over plain HTTP), moves the clock forward if it is behind, downloads the release's
+   installer, checks its SHA-256 and runs it. The release and its checksum are in
+   [`catalog.rs`](crates/fiber-setup-core/src/catalog.rs), and its list of components is copied into
+   [`image/components.yaml`](image/components.yaml).
 3. **Boot mode.** With the jumper on `BOOT` the Compute Module's boot ROM appears on USB (`0a5c:2711`). The
    app sends it Raspberry Pi's boot code and then the mass-storage gadget, the way Raspberry Pi's
    [rpiboot](https://github.com/raspberrypi/usbboot) does
@@ -250,8 +266,11 @@ not end up in the shell's history. To start a FIBER over USB the command line ne
    appears as a disk.
 4. **Write and check.** The image is written, its partition table last, then read back from the eMMC and
    compared byte for byte.
-5. **First start.** The FIBER joins the network, installs the software and restarts once. The app looks up
-   its name on the network (`<name>.local`) and checks that it answers on SSH.
+5. **First start.** The FIBER joins the network, installs the FIBER platform and, when the board's settings
+   changed, restarts once. The app looks up its name on the network (`<name>.local`), checks that it
+   answers on SSH, and reads how far it is from two Avahi records on it: the script's (`_fiber-setup._tcp`)
+   and the platform's (`_fiber._tcp`). It asks the FIBER for them directly, on port 5353, so nothing on the
+   computer listens for them ([`check.rs`](crates/fiber-setup-core/src/check.rs)).
 
 What differs between the systems is how the app finds the FIBER and how it may write the disk:
 
@@ -385,7 +404,7 @@ CI runs them on Windows, macOS and Linux, and on Windows also installs the app a
 | `crates/fiber-setup-cli` | `fiber-setup-cli` |
 | `src-tauri` | The desktop app: the window, its commands, the update check |
 | `src` | The wizard (Svelte 5): one view per step in `src/views`, translations in `src/lib/i18n`, drawings in `src/assets/drawings` |
-| `image` | `fiber-install.sh`, which the FIBER runs on its first start |
+| `image` | `fiber-install.sh`, which the FIBER runs on its first start, and the copy of the FIBER platform's `components.yaml` |
 | `packaging/windows` | The installer and the USB driver's description |
 | `scripts` | The gadget's files, the Windows package, the version check, the screenshots |
 | `docs` | [Releasing](docs/release.md), the screenshots |
