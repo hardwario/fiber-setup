@@ -102,7 +102,7 @@
     <Icon name="package" size={15} /><span class="k">{t().done.software}</span><span
       >{f.components.length > 0
         ? fill(t().done.softwareFiber, { version: offer?.release.version ?? "", components: chosen })
-        : t().done.softwarePlain}</span
+        : fill(t().done.softwarePlain, { version: offer?.release.version ?? "" })}</span
     >
   </div>
 </section>

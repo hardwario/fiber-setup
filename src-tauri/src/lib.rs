@@ -196,7 +196,7 @@ fn app_info(app: AppHandle) -> AppInfo {
     AppInfo {
         version: fiber_setup_core::VERSION,
         os: std::env::consts::OS,
-        image: catalog::RASPIOS_LITE,
+        image: catalog::FIBER_IMAGE,
         platform: fiber_setup_core::platform::offer().ok(),
         tools_found: tools(&app).is_some(),
         defaults: Defaults {
@@ -213,7 +213,7 @@ fn app_info(app: AppHandle) -> AppInfo {
 
 #[tauri::command]
 fn image_status(state: State<'_, AppState>) -> serde_json::Value {
-    let s = image::status(&image::cache_dir(), &catalog::RASPIOS_LITE);
+    let s = image::status(&image::cache_dir(), &catalog::FIBER_IMAGE);
     serde_json::json!({ "status": s, "prepared": state.prepared() })
 }
 
@@ -233,7 +233,7 @@ fn image_prepare(app: AppHandle, state: State<'_, AppState>, file: Option<String
         let cache = image::cache_dir();
         let r = match &file {
             Some(f) => image::prepare_local(&cache, std::path::Path::new(f), &emit, &state.cancel),
-            None => image::prepare_official(&cache, &catalog::RASPIOS_LITE, &emit, &state.cancel),
+            None => image::prepare_official(&cache, &catalog::FIBER_IMAGE, &emit, &state.cancel),
         };
         if let (Ok(p), Ok(mut slot)) = (&r, state.prepared.lock()) {
             *slot = Some(p.clone());

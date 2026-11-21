@@ -47,9 +47,6 @@
     {#if img.error}
       <div class="note critical"><Icon name="warning" size={16} /><span>{fill(t().image.failed, { error: img.error })}</span></div>
     {/if}
-    {#if img.otherCopy && !img.result}
-      <div class="muted small">{t().image.reuse}</div>
-    {/if}
     <div class="actions">
       {#if img.error && !img.busy}
         <button class="btn primary" onclick={() => wizard.prepareImage(null)}><Icon name="refresh" size={14} /> {t().common.retry}</button>
@@ -68,7 +65,7 @@
 </section>
 
 <section class="card pad part" class:off={!wizard.installFiber}>
-  <div class="glyph"><Icon name="download" size={22} /></div>
+  <div class="glyph"><Icon name="power" size={22} /></div>
   <div class="what">
     <div class="top">
       <div class="names">

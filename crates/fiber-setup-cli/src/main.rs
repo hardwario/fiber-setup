@@ -19,7 +19,7 @@ struct Cli {
 enum Cmd {
     /// Download (or reuse) and check the image, unpack it into the cache.
     Image {
-        /// Use this .img.xz or .img instead of the known Raspberry Pi OS Lite.
+        /// Use this .img.xz or .img instead of the FIBER platform's image.
         #[arg(long)]
         file: Option<PathBuf>,
     },
@@ -73,8 +73,8 @@ struct FlashArgs {
     country: String,
     #[arg(long)]
     timezone: Option<String>,
-    /// The components of the FIBER platform to install on the first start, with what they
-    /// require (see `components`); `none` for a plain Raspberry Pi OS. Default: agent,node-red.
+    /// The components of the FIBER platform to turn on at the first start, with what they
+    /// require (see `components`); `none` to turn none on. Default: agent,node-red.
     #[arg(long, value_delimiter = ',')]
     components: Option<Vec<String>>,
     /// MQTT for the network too, on port 1884 with the login (the platform's mqtt.lan).
@@ -116,7 +116,7 @@ fn prepared(file: Option<&Path>, cancel: &Cancel) -> Result<image::Prepared> {
     let cache = image::cache_dir();
     match file {
         Some(f) => image::prepare_local(&cache, f, &print_event, cancel),
-        None => image::prepare_official(&cache, &catalog::RASPIOS_LITE, &print_event, cancel),
+        None => image::prepare_official(&cache, &catalog::FIBER_IMAGE, &print_event, cancel),
     }
 }
 

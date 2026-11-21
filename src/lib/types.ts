@@ -75,7 +75,7 @@ export interface Prepared {
 }
 
 export interface ImageStatus {
-  status: { image: OsImage; ready: boolean; other_copy: string | null };
+  status: { image: OsImage; ready: boolean };
   prepared: Prepared | null;
 }
 

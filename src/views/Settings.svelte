@@ -164,7 +164,6 @@
             <input type="checkbox" checked={on} disabled={needs.length > 0} onchange={(e) => tick(c.id, e.currentTarget.checked)} />
             <span class="text">
               <span class="title">{text(c).title}</span>
-              {#if c.size?.download}<span class="hint">{fill(t().settings.download, { size: c.size.download })}</span>{/if}
               <span class="hint block">{text(c).about}</span>
               {#if needs.length > 0}
                 <span class="hint block"

@@ -46,16 +46,10 @@ pub struct Status {
     pub image: OsImage,
     /// Unpacked and ready, nothing to download.
     pub ready: bool,
-    /// A copy of the compressed file another program already downloaded (not yet checked).
-    pub other_copy: Option<PathBuf>,
 }
 
 pub fn status(cache: &Path, image: &OsImage) -> Status {
-    Status { image: *image, ready: read_marker(cache, image.sha256).is_some(), other_copy: other_copy(image) }
-}
-
-fn other_copy(image: &OsImage) -> Option<PathBuf> {
-    catalog::known_copies().into_iter().find(|p| fs::metadata(p).map(|m| m.len() == image.size).unwrap_or(false))
+    Status { image: *image, ready: read_marker(cache, image.sha256).is_some() }
 }
 
 fn raw_path(cache: &Path, sha256: &str) -> PathBuf {
@@ -78,8 +72,7 @@ fn read_marker(cache: &Path, sha256: &str) -> Option<u64> {
     (actual == size).then_some(size)
 }
 
-/// The known image: reuse what is cached, else take another program's copy or download it,
-/// check it and unpack it.
+/// The known image: reuse what is cached, else download it, check it and unpack it.
 pub fn prepare_official(cache: &Path, image: &OsImage, events: Sink<'_>, cancel: &Cancel) -> Result<Prepared> {
     fs::create_dir_all(cache).with_context(|| format!("creating {}", cache.display()))?;
     let done = |size| Prepared {
@@ -95,14 +88,13 @@ pub fn prepare_official(cache: &Path, image: &OsImage, events: Sink<'_>, cancel:
     }
 
     let mut compressed: Option<PathBuf> = None;
-    for path in [Some(cache.join(image.file_name)), other_copy(image)].into_iter().flatten() {
-        if fs::metadata(&path).map(|m| m.len() == image.size).unwrap_or(false) {
-            events(Event::Log { line: format!("Checking {}", path.display()) });
-            let sha = hash_file(&path, events, cancel)?;
-            if sha == image.sha256 {
-                compressed = Some(path);
-                break;
-            }
+    let path = cache.join(image.file_name);
+    if fs::metadata(&path).map(|m| m.len() == image.size).unwrap_or(false) {
+        events(Event::Log { line: format!("Checking {}", path.display()) });
+        let sha = hash_file(&path, events, cancel)?;
+        if sha == image.sha256 {
+            compressed = Some(path);
+        } else {
             events(Event::Log { line: format!("{} has another checksum, not used", path.display()) });
         }
     }
@@ -120,7 +112,7 @@ pub fn prepare_official(cache: &Path, image: &OsImage, events: Sink<'_>, cancel:
 pub fn prepare_local(cache: &Path, path: &Path, events: Sink<'_>, cancel: &Cancel) -> Result<Prepared> {
     fs::create_dir_all(cache).with_context(|| format!("creating {}", cache.display()))?;
     let sha = hash_file(path, events, cancel)?;
-    let official = sha == catalog::RASPIOS_LITE.sha256;
+    let official = sha == catalog::FIBER_IMAGE.sha256;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     if is_xz(path)? {
         let size = match read_marker(cache, &sha) {

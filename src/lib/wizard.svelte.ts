@@ -108,7 +108,7 @@ class Wizard {
   info = $state.raw<AppInfo | null>(null);
   failed = $state<string | null>(null);
 
-  image = $state<Job<Prepared> & { otherCopy: string | null }>({ ...job<Prepared>(), otherCopy: null });
+  image = $state<Job<Prepared>>(job<Prepared>());
   form = $state({
     hostname: "fiber",
     username: "fiber",
@@ -209,7 +209,6 @@ class Wizard {
       // What a check found before the window was listening.
       this.update = (await this.api.updateAvailable()) ?? this.update;
       const s = await this.api.imageStatus();
-      this.image.otherCopy = s.status.other_copy;
       if (s.prepared) this.image.result = s.prepared;
       else if (s.status.ready) this.prepareImage(null);
     } catch (e) {
@@ -311,7 +310,7 @@ class Wizard {
 
   prepareImage(file: string | null) {
     if (!this.api || this.image.busy) return;
-    Object.assign(this.image, { ...job<Prepared>(), busy: true, otherCopy: this.image.otherCopy });
+    Object.assign(this.image, { ...job<Prepared>(), busy: true });
     this.api.imagePrepare(file).catch((e) => {
       this.image.busy = false;
       this.image.error = String(e);

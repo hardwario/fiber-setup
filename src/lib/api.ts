@@ -111,7 +111,7 @@ async function tauriApi(): Promise<Api> {
 /** The release and the components the simulated FIBER offers: those of `image/components.yaml`
  * (a test keeps the two alike), without their sizes, which are not measured yet. */
 export const SIMULATED_OFFER: Offer = {
-  release: { version: "0.1.0", installer_sha256: "623784adbdb5b660a51446f9560f253f4416b0beacd65d7d452512d5fc9dd72f" },
+  release: { version: "0.1.0", installer_sha256: "8852632b3b601c8a25d3644f0d1cd0f39c803b683bca9d35203472c632acf4ef" },
   components: [
     { id: "base", title: "Basic system configuration", about: "", requires: [], suggests: [], ports: [], size: null },
     {
@@ -183,17 +183,17 @@ function simulatedProgress(look: number, components: string[]): Pick<Found, "set
  * of FIBER Setup. */
 function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (text: string) => Promise<void>): Api {
   const image = {
-    id: "raspios-lite-arm64-2026-10-06",
-    name: "Raspberry Pi OS Lite (64-bit)",
-    version: "2026-10-06, Debian 13 (trixie)",
-    url: "https://downloads.raspberrypi.com/",
-    sha256: "483db18a48da399b5b7022ffae9a07bc6d99daab30e593aedac09b69ff422843",
-    size: 550_466_056,
-    file_name: "2026-10-06-raspios-trixie-arm64-lite.img.xz",
+    id: "fiber-platform-0.1.0-image-arm64",
+    name: "FIBER platform 0.1.0",
+    version: "on Raspberry Pi OS Lite of 2026-10-06",
+    url: "https://github.com/hardwario/fiber-platform/releases/",
+    sha256: "e13658b3a0081c2dd47ce79a3ea80882d3b999d85334b1d5675c1d66278751e4",
+    size: 652_539_084,
+    file_name: "fiber-platform-0.1.0-image-arm64.img.xz",
   };
   const prepared: Prepared = {
-    raw: "~/.cache/fiber-setup/483db18a48da399b.img",
-    size: 3_078_619_136,
+    raw: "~/.cache/fiber-setup/e13658b3a0081c2d.img",
+    size: 3_686_793_216,
     source_sha256: image.sha256,
     official: true,
     name: `${image.name} (${image.version})`,
@@ -262,7 +262,7 @@ function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (tex
   return {
     simulated: true,
     appInfo,
-    imageStatus: async () => ({ status: { image, ready: false, other_copy: null }, prepared: null }),
+    imageStatus: async () => ({ status: { image, ready: false }, prepared: null }),
     imagePrepare: async () => {
       cancelled = false;
       const [cb, done] = imageCbs ?? [() => {}, () => {}];
