@@ -114,9 +114,10 @@ impl Settings {
                 "the user name may use only a-z, 0-9, '_' and '-', must start with a letter and cannot be a system account"
             );
         }
-        // Its length is the user's business; without any, nobody could log in with it.
-        if self.password.is_empty() {
-            bail!("the password is missing");
+        // It opens SSH, `sudo` and the components reachable from the network (Node-RED, MQTT,
+        // ChirpStack, which itself refuses fewer than 8): at least 8 characters (D25).
+        if self.password.chars().count() < 8 {
+            bail!("the password must have at least 8 characters");
         }
         if let Some(key) = &self.ssh_key {
             let key = key.trim();
@@ -354,6 +355,13 @@ pub(crate) mod tests {
         assert!(s.validate().is_err());
         let mut s = sample();
         s.password = "short".into();
+        assert!(s.validate().is_err());
+        s.password = "1234567".into();
+        assert!(s.validate().is_err());
+        // Characters, not bytes: seven of them in fourteen bytes are still too few.
+        s.password = "ěščřžýá".into();
+        assert!(s.validate().is_err());
+        s.password = "hardwario".into();
         assert!(s.validate().is_ok());
         s.password = String::new();
         assert!(s.validate().is_err());

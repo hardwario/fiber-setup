@@ -110,7 +110,7 @@ export const en = {
     hostnameFiber: "With the FIBER platform it is named after its serial number, for example fiber-a1b2c3d4. The app shows the name once the FIBER is written.",
     login: "Login",
     password: "Login password",
-    passwordHint: "For logging in over SSH as {user}, and for the components that can be reached from the network. Pre-filled with “fiber”; choose your own for a FIBER that others can reach.",
+    passwordHint: "For logging in over SSH as {user}, and for the components that can be reached from the network. At least 8 characters, pre-filled with “hardwario”; choose your own for a FIBER that others can reach.",
     passwordAgain: "Password again",
     network: "Network",
     networkLead: "An Ethernet cable always works: the FIBER gets its address by DHCP. Choose what to do about Wi-Fi.",
@@ -155,7 +155,7 @@ export const en = {
     fix: "Check the marked fields.",
     err: {
       hostname: "Use only a-z, 0-9 and '-', not at the start or end.",
-      password: "Enter a password.",
+      password: "Enter a password of at least 8 characters.",
       passwordAgain: "The passwords do not match.",
       user: "Use only a-z, 0-9, '_' and '-', starting with a letter; not a system name like root.",
       timezone: "A name like Europe/Prague, or empty.",

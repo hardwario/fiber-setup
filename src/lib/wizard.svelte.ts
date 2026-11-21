@@ -114,8 +114,8 @@ class Wizard {
     username: "fiber",
     // Pre-filled, like the user name: a FIBER can be set up without typing anything. The page
     // says so, and the last page shows both again.
-    password: "fiber",
-    password2: "fiber",
+    password: "hardwario",
+    password2: "hardwario",
     // The Ethernet cable always works; Wi-Fi is what the user adds.
     network: "none" as Network,
     ssid: "",
@@ -277,7 +277,7 @@ class Wizard {
     // With the FIBER platform the name comes from the serial number; the field is not shown.
     if (!this.installFiber && !HOST.test(f.hostname)) e.hostname = "hostname";
     if (!USER.test(f.username) || SYSTEM_USERS.includes(f.username)) e.username = "user";
-    if (!f.password) e.password = "password";
+    if ([...f.password].length < 8) e.password = "password";
     else if (f.password !== f.password2) e.password2 = "passwordAgain";
     if (f.network === "wifi") {
       if (!f.ssid || utf8(f.ssid) > 32) e.ssid = "ssid";

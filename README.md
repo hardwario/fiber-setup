@@ -152,8 +152,9 @@ Nine steps in three parts. The step list on the left shows where you are, and *B
 
 - **Your settings stay with you.** They go onto the FIBER and nowhere else, and the app forgets the
   passwords when it is closed.
-- **The login password is pre-filled with `fiber`.** Choose your own for a FIBER that others can reach. The
-  last step shows the user name and, on a click, the password.
+- **The login password has at least 8 characters, and is pre-filled with `hardwario`.** Choose your own for a
+  FIBER that others can reach: it opens SSH and the components reachable from the network. The last step
+  shows the user name and, on a click, the password.
 - **An Ethernet cable always works:** the FIBER gets its address by DHCP. Wi-Fi is a choice: none, or set
   now. Setting it later from your phone comes with the FIBER platform's Bluetooth.
 - **The FIBER platform** is [hardwario/fiber-platform](https://github.com/hardwario/fiber-platform): the

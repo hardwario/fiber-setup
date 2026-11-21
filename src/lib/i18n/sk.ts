@@ -112,7 +112,7 @@ export const sk: Messages = {
     hostnameFiber: "S platformou FIBER dostane názov podľa sériového čísla, napríklad fiber-a1b2c3d4. Aplikácia názov ukáže po zápise.",
     login: "Prihlásenie",
     password: "Heslo na prihlásenie",
-    passwordHint: "Na prihlásenie cez SSH ako {user} a pre súčasti, ktoré sú dostupné zo siete. Predvyplnené je „fiber“; pre FIBER, ku ktorému majú prístup aj iní, zvoľte vlastné.",
+    passwordHint: "Na prihlásenie cez SSH ako {user} a pre súčasti, ktoré sú dostupné zo siete. Aspoň 8 znakov, predvyplnené je „hardwario“; pre FIBER, ku ktorému majú prístup aj iní, zvoľte vlastné.",
     passwordAgain: "Heslo znova",
     network: "Sieť",
     networkLead: "Ethernetový kábel funguje vždy: FIBER dostane adresu cez DHCP. Vyberte, čo s Wi-Fi.",
@@ -157,7 +157,7 @@ export const sk: Messages = {
     fix: "Skontrolujte označené polia.",
     err: {
       hostname: "Iba a-z, 0-9 a '-', nie na začiatku ani na konci.",
-      password: "Zadajte heslo.",
+      password: "Zadajte heslo s dĺžkou aspoň 8 znakov.",
       passwordAgain: "Heslá sa nezhodujú.",
       user: "Iba a-z, 0-9, '_' a '-', na začiatku písmeno; nie systémové meno ako root.",
       timezone: "Názov ako Europe/Prague, alebo prázdne.",
