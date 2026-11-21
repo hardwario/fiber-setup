@@ -9,12 +9,16 @@
 # cable plugged in only later, a power cut.
 #
 # The work, in four steps:
+#
 #   1. wait for the network, over plain HTTP: it answers before the clock is right;
 #   2. move the clock forward to the date of that answer, if it is behind and NTP has not set it
 #      (a fresh image starts with its build date, and TLS and apt need the right time);
 #   3. download the installer of the FIBER platform release FIBER Setup names, and check its
 #      sha256;
 #   4. run it. It takes the seed, overwrites it and deletes it, and installs the components.
+#
+# On the FIBER platform's ready-made image of that release, which brings the installer, steps 1
+# to 3 are left out: the first start needs no network.
 #
 # While it runs it says what it does in an Avahi record (_fiber-setup._tcp), so that FIBER Setup
 # can follow it without a login; the platform's own record (_fiber._tcp) says which component
@@ -183,6 +187,21 @@ download() {
     echo "Its sha256 is right: $got"
 }
 
+# The ready-made image of the FIBER platform (its docs/provisioning.md, "The ready-made image")
+# brings its release unpacked and that release's installer: when they are the ones FIBER Setup
+# names, the installer runs from there, without the network, the clock or a download.
+from_image() {
+    [ -f /etc/fiber/image.json ] && [ -f /opt/fiber/install.sh ] || return 1
+    local release got
+    release=$(python3 -c 'import json; print(json.load(open("/etc/fiber/image.json")).get("release", ""))' 2> /dev/null) ||
+        return 1
+    [ "$release" = "$VERSION" ] || return 1
+    got=$(sha256sum /opt/fiber/install.sh | cut -d ' ' -f 1)
+    [ "$got" = "$INSTALLER_SHA256" ] || return 1
+    cp /opt/fiber/install.sh "$STATE/install.sh"
+    echo "=== The ready-made image of the FIBER platform ${VERSION}: its own installer (sha256 $got), without the network"
+}
+
 install() {
     echo "=== Step 4 of 4: installing the FIBER platform ${VERSION}"
     publish install
@@ -239,9 +258,11 @@ main() {
     # Wi-Fi may be set later from the phone app; the radio must not stay blocked.
     rfkill unblock wifi 2> /dev/null || true
 
-    wait_network
-    set_clock
-    download
+    if ! from_image; then
+        wait_network
+        set_clock
+        download
+    fi
     install
 }
 
