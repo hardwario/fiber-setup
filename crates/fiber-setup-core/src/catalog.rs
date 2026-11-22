@@ -20,20 +20,15 @@ pub struct OsImage {
 /// Raspberry Pi OS Lite (64-bit) of 2026-10-06 with the release and every component already in
 /// it, none turned on. FIBER Setup always writes it, whatever is ticked (the platform's D28), so a
 /// first start needs no internet; with nothing ticked the FIBER starts with nothing turned on.
-///
-/// NOT PUBLISHED YET: the sha256 and size are those of the image the platform's release workflow
-/// built in its dry run 44913866458 (from fiber-platform commit a005aff), so that everything can be
-/// tried before the first release exists (put that file into the cache under `file_name`). Replace
-/// them with the published image's (the platform's D24) before this is pushed or released: the
-/// address does not exist yet.
+/// The sha256 and size are those of the published release (its `SHA256SUMS`; 3.69 GB unpacked).
 pub const FIBER_IMAGE: OsImage = OsImage {
-    id: "fiber-platform-0.1.0-image-arm64",
-    name: "FIBER platform 0.1.0",
+    id: "fiber-platform-1.0.0-image-arm64",
+    name: "FIBER platform 1.0.0",
     version: "on Raspberry Pi OS Lite of 2026-10-06",
-    url: "https://github.com/hardwario/fiber-platform/releases/download/v0.1.0/fiber-platform-0.1.0-image-arm64.img.xz",
-    sha256: "e13658b3a0081c2dd47ce79a3ea80882d3b999d85334b1d5675c1d66278751e4",
-    size: 652_539_084,
-    file_name: "fiber-platform-0.1.0-image-arm64.img.xz",
+    url: "https://github.com/hardwario/fiber-platform/releases/download/v1.0.0/fiber-platform-1.0.0-image-arm64.img.xz",
+    sha256: "30549b12b143a9b54242cdb5faf34e79dbb62e49095ca6898946544de77ec56b",
+    size: 650_635_620,
+    file_name: "fiber-platform-1.0.0-image-arm64.img.xz",
 };
 
 /// A release of the FIBER platform, named by its installer: a new FIBER installs this one, and
@@ -54,16 +49,11 @@ impl PlatformRelease {
 }
 
 /// The FIBER platform a new FIBER installs on its first start. `image/components.yaml` is the
-/// same release's `provision/components.yaml`, and moves with it.
-///
-/// NOT PUBLISHED YET: this is the installer of release 0.1.0 as the platform's release workflow
-/// built it in its dry run 44913866458 (fiber-platform commit a005aff), the one inside
-/// [`FIBER_IMAGE`], so that everything can be tried before the first release exists. Replace it
-/// with the published one (the platform's D24) before this is pushed or released: a FIBER cannot
-/// download this installer.
+/// same release's `provision/components.yaml`, and moves with it. Its installer is the one inside
+/// [`FIBER_IMAGE`].
 pub const FIBER_PLATFORM: PlatformRelease = PlatformRelease {
-    version: "0.1.0",
-    installer_sha256: "8852632b3b601c8a25d3644f0d1cd0f39c803b683bca9d35203472c632acf4ef",
+    version: "1.0.0",
+    installer_sha256: "bd9d84e2115e43f9ddfad77f984c126b7abf5246867ac9854e408a3e394f2e3e",
 };
 
 #[cfg(test)]

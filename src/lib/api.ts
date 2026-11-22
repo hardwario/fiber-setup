@@ -111,7 +111,7 @@ async function tauriApi(): Promise<Api> {
 /** The release and the components the simulated FIBER offers: those of `image/components.yaml`
  * (a test keeps the two alike), without their sizes, which are not measured yet. */
 export const SIMULATED_OFFER: Offer = {
-  release: { version: "0.1.0", installer_sha256: "8852632b3b601c8a25d3644f0d1cd0f39c803b683bca9d35203472c632acf4ef" },
+  release: { version: "1.0.0", installer_sha256: "bd9d84e2115e43f9ddfad77f984c126b7abf5246867ac9854e408a3e394f2e3e" },
   components: [
     { id: "base", title: "Basic system configuration", about: "", requires: [], suggests: [], ports: [], size: null },
     {
@@ -183,16 +183,16 @@ function simulatedProgress(look: number, components: string[]): Pick<Found, "set
  * of FIBER Setup. */
 function simulatedApi(openLink?: (url: string) => Promise<void>, copyText?: (text: string) => Promise<void>): Api {
   const image = {
-    id: "fiber-platform-0.1.0-image-arm64",
-    name: "FIBER platform 0.1.0",
+    id: "fiber-platform-1.0.0-image-arm64",
+    name: "FIBER platform 1.0.0",
     version: "on Raspberry Pi OS Lite of 2026-10-06",
     url: "https://github.com/hardwario/fiber-platform/releases/",
-    sha256: "e13658b3a0081c2dd47ce79a3ea80882d3b999d85334b1d5675c1d66278751e4",
-    size: 652_539_084,
-    file_name: "fiber-platform-0.1.0-image-arm64.img.xz",
+    sha256: "30549b12b143a9b54242cdb5faf34e79dbb62e49095ca6898946544de77ec56b",
+    size: 650_635_620,
+    file_name: "fiber-platform-1.0.0-image-arm64.img.xz",
   };
   const prepared: Prepared = {
-    raw: "~/.cache/fiber-setup/e13658b3a0081c2d.img",
+    raw: "~/.cache/fiber-setup/30549b12b143a9b5.img",
     size: 3_686_793_216,
     source_sha256: image.sha256,
     official: true,
