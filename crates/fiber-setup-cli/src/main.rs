@@ -153,7 +153,7 @@ fn run() -> Result<()> {
         }
         Cmd::Access { install } => {
             if install {
-                access::install(rpiboot::find_tools(&[]).as_ref())?;
+                access::install(rpiboot::find_tools(&beside_program()).as_ref())?;
             }
             println!("{}", serde_json::to_string_pretty(&access::status())?);
         }
@@ -193,10 +193,15 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+/// The `usbboot` folder beside this program, as a release's archive has it.
+fn beside_program() -> Vec<PathBuf> {
+    std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("usbboot"))).into_iter().collect()
+}
+
 /// The gadget's files, which a FIBER is started with over USB.
 fn tools() -> Result<rpiboot::Tools> {
-    rpiboot::find_tools(&[]).context(
-        "the gadget's files (mass-storage-gadget64) are not found; set FIBER_SETUP_USBBOOT to the folder they are in, or to a usbboot checkout",
+    rpiboot::find_tools(&beside_program()).context(
+        "the gadget's files (mass-storage-gadget64) are not found; keep the usbboot folder beside fiber-setup-cli, or set FIBER_SETUP_USBBOOT to the folder they are in",
     )
 }
 

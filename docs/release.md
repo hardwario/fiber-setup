@@ -28,11 +28,16 @@ the signing; started on a release tag it signs too, but still publishes nothing.
 | `fiber-setup-<version>-windows-x64-setup.exe`, `fiber-setup-<version>-windows-x64-portable.zip` | `build` (windows, the exe), signed and packed by `sign-windows` |
 | `fiber-setup-<version>-macos-universal.dmg` | `build` (macos, the app), signed, notarized and packed by `sign-macos` |
 | `fiber-setup-<version>-linux-x86_64.AppImage`, `fiber-setup-<version>-linux-x86_64.deb` | `build` (linux), not signed |
+| `fiber-setup-cli-<version>-windows-x64.zip` | `build` (windows, the program), signed and packed by `sign-windows` |
+| `fiber-setup-cli-<version>-macos-universal.zip` | `build` (macos, the program and its folder), signed and notarized by `sign-macos` |
+| `fiber-setup-cli-<version>-linux-x86_64.tar.gz` | `build` (linux), not signed |
 
 Each has a `<file>.sha256` next to it (`shasum -a 256 -c <file>.sha256`), made after signing and packing.
 The release holds these files and nothing else; the `publish` job fails otherwise.
 
-Not released yet: `fiber-setup-cli` (it needs the gadget's files beside it, which only the app bundles).
+Each `fiber-setup-cli` archive holds one folder: the program, the `usbboot` folder beside it (the gadget's
+files, on Windows the USB driver too), where the program looks for them, and the licences. On Windows the
+program is built with the C runtime inside it, so it needs no Visual C++ runtime, as the app does not.
 
 ## macOS signing and notarization
 
@@ -42,16 +47,19 @@ Intel, from macOS 11 on. Order:
 
 1. `FIBER Setup.app`, with the hardened runtime and a secure timestamp. It is then notarized and the ticket
    stapled to it, so it also opens offline;
-2. the dmg built from it (the app and a link to Applications): signed, notarized and stapled.
+2. the dmg built from it (the app and a link to Applications): signed, notarized and stapled;
+3. `fiber-setup-cli`, with the hardened runtime and a secure timestamp, and the zip with its folder
+   notarized. A program outside an app cannot carry a stapled ticket: Gatekeeper asks Apple for it the
+   first time the program runs, so that needs the internet once.
 
 The app holds one program, its own: it starts a FIBER over USB by itself, and the gadget it sends is data
 (Raspberry Pi's files, fetched by `scripts/fetch-usbboot.mjs`). Apple refuses an app with any program in it
 that is not signed with a Developer ID, so the job first checks that there is no other and stops if it finds
-one.
+one. It checks the command line's folder the same way: `fiber-setup-cli` must be its only program.
 
 A verification step fails the job unless Gatekeeper (`spctl`) accepts the app and the dmg, both tickets are
-stapled, and the app's program is signed with Developer ID, a timestamp and the hardened runtime and is for
-both architectures.
+stapled, and the app's program and `fiber-setup-cli` are each signed with Developer ID, a timestamp and the
+hardened runtime and are for both architectures.
 
 The app needs no entitlements: it is not sandboxed, WebKit runs its JIT in Apple's own processes, and USB,
 the right it asks macOS for before a write (Authorization Services) and the tools it starts (`ioreg`,
@@ -91,9 +99,10 @@ Signing), account `hardwario`, certificate profile `hardwario` (Public Trust, "C
 
 1. `uninstall.exe` is made (unsigned) from `packaging/windows/installer.nsi`: the installer carries it, and
    cannot be changed once it is made, so it has to exist before the first signing.
-2. Signed together: `fiber-setup.exe`, the USB driver's catalog `usbboot\driver\fiber-usbboot.cat`, and
-   `uninstall.exe`.
-3. The installer is made from the signed files, and the portable zip of the same app.
+2. Signed together: `fiber-setup.exe`, `fiber-setup-cli.exe`, the USB driver's catalog
+   `usbboot\driver\fiber-usbboot.cat`, and `uninstall.exe`.
+3. The installer is made from the signed files, the portable zip of the same app, and the command line's
+   zip (`fiber-setup-cli.exe` and the same `usbboot` folder).
 4. The installer is signed.
 
 Not signed by us, because it is Microsoft's file and goes out as it came: `MicrosoftEdgeWebview2Setup.exe`

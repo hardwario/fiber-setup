@@ -220,8 +220,10 @@ read by native speakers. If something does not work for you, please
 
 ## Command line
 
-`fiber-setup-cli` does the same from a terminal, one FIBER at a time. It is not among the release files yet:
-build it from source (below).
+`fiber-setup-cli` does the same from a terminal, one FIBER at a time. The releases have it beside the app:
+`fiber-setup-cli-<version>-windows-x64.zip`, `fiber-setup-cli-<version>-macos-universal.zip` and
+`fiber-setup-cli-<version>-linux-x86_64.tar.gz`. Unpack it anywhere and keep the `usbboot` folder beside the
+program: a FIBER is started over USB with the files in it.
 
 ```sh
 fiber-setup-cli devices             # FIBERs on USB and the disks on this computer
@@ -243,8 +245,8 @@ fiber-setup-cli find fiber                    # look for fiber.local, and how fa
 ```
 
 `fiber-setup-cli <command> --help` lists every option. The passwords come from the environment, so they do
-not end up in the shell's history. To start a FIBER over USB the command line needs the files that
-`npm run usbboot` fetches: point `FIBER_SETUP_USBBOOT` at their folder (`src-tauri/resources/usbboot`).
+not end up in the shell's history. Built from source, the command line needs the files that `npm run usbboot`
+fetches to start a FIBER over USB: point `FIBER_SETUP_USBBOOT` at their folder (`src-tauri/resources/usbboot`).
 
 ## How it works
 

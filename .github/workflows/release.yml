@@ -123,28 +123,52 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: npx tauri build ${{ matrix.args }} -- --locked
-      # The app must start on a Windows without the Visual C++ runtime.
-      # tauri-build links the VC runtime statically and the Universal CRT
-      # dynamically; the UCRT is part of every Windows 10 and 11, so only the
-      # VC runtime DLLs fail the check.
-      - name: Check that the exe needs no Visual C++ runtime
+      # The command line, released beside the app. On macOS for Apple silicon and Intel in one
+      # program, as the app is. On Windows with the C runtime inside the program (the app gets
+      # its VC runtime that way from tauri-build), so that it also starts on a Windows without
+      # the Visual C++ runtime; with --target, the flag reaches only the program, not the build
+      # scripts.
+      - name: Build the command line
+        env:
+          NAME: ${{ matrix.name }}
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          set -euo pipefail
+          case "$NAME" in
+            macos)
+              cargo build --release --locked -p fiber-setup-cli --target aarch64-apple-darwin --target x86_64-apple-darwin
+              mkdir -p target/cli
+              lipo -create -output target/cli/fiber-setup-cli \
+                target/aarch64-apple-darwin/release/fiber-setup-cli target/x86_64-apple-darwin/release/fiber-setup-cli ;;
+            linux)
+              cargo build --release --locked -p fiber-setup-cli ;;
+            windows)
+              RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p fiber-setup-cli --target x86_64-pc-windows-msvc ;;
+          esac
+      # The app and the command line must start on a Windows without the Visual
+      # C++ runtime. tauri-build links the app's VC runtime statically and the
+      # Universal CRT dynamically; the UCRT is part of every Windows 10 and 11,
+      # so only the VC runtime DLLs fail the check.
+      - name: Check that the programs need no Visual C++ runtime
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -property installationPath
           $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -Last 1
           if (-not $dumpbin) { Write-Error "dumpbin.exe not found"; exit 1 }
-          $deps = & $dumpbin.FullName /nologo /dependents target\release\fiber-setup.exe
-          $deps
-          $crt = $deps -match 'vcruntime|msvcp'
-          if ($crt) { Write-Error "fiber-setup.exe depends on the Visual C++ runtime: $crt"; exit 1 }
-      # What the installer and the zip are made from, and Microsoft's WebView2
-      # installer that the app's installer carries.
+          foreach ($exe in 'target\release\fiber-setup.exe', 'target\x86_64-pc-windows-msvc\release\fiber-setup-cli.exe') {
+            $deps = & $dumpbin.FullName /nologo /dependents $exe
+            $deps
+            $crt = $deps -match 'vcruntime|msvcp'
+            if ($crt) { Write-Error "$exe depends on the Visual C++ runtime: $crt"; exit 1 }
+          }
+      # What the installer and the zips are made from (the command line too),
+      # and Microsoft's WebView2 installer that the app's installer carries.
       - name: Stage the Windows app
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          scripts/windows-package.ps1 -Step stage -Exe target\release\fiber-setup.exe -Work out
+          scripts/windows-package.ps1 -Step stage -Exe target\release\fiber-setup.exe -Cli target\x86_64-pc-windows-msvc\release\fiber-setup-cli.exe -Work out
           scripts/windows-package.ps1 -Step webview2 -Work out
       - name: Collect artifacts
         env:
@@ -154,15 +178,28 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           v="${v//\//-}"  # a dry run on feature/x
           mkdir -p out
+          # The command line's folder: the program, the gadget's files beside it (it finds them
+          # there) and the licences.
+          cli="stage/fiber-setup-cli-$v"
+          if [ "$NAME" != windows ]; then
+            mkdir -p "$cli"
+            cp -R src-tauri/resources/usbboot "$cli/usbboot"
+            cp -R LICENSE LICENSES "$cli/"
+          fi
           case "$NAME" in
             # Signed, notarized, put in a dmg and checksummed by sign-macos.
             # ditto keeps what a plain artifact loses: file modes (the app's
             # program must stay executable) and links.
-            macos) ditto -c -k --keepParent "target/universal-apple-darwin/release/bundle/macos/FIBER Setup.app" out/fiber-setup-app.zip ;;
+            # The command line the same way, its program signed by sign-macos too.
+            macos) ditto -c -k --keepParent "target/universal-apple-darwin/release/bundle/macos/FIBER Setup.app" out/fiber-setup-app.zip
+                   cp target/cli/fiber-setup-cli "$cli/"
+                   ditto -c -k --keepParent "$cli" out/fiber-setup-cli.zip ;;
             linux) cp target/release/bundle/appimage/*.AppImage "out/fiber-setup-$v-linux-x86_64.AppImage"
-                   cp target/release/bundle/deb/*.deb "out/fiber-setup-$v-linux-x86_64.deb" ;;
-            # Staged above: out/app and Microsoft's WebView2 installer. Signed,
-            # packed and checksummed by sign-windows.
+                   cp target/release/bundle/deb/*.deb "out/fiber-setup-$v-linux-x86_64.deb"
+                   cp target/release/fiber-setup-cli "$cli/"
+                   tar -C stage -czf "out/fiber-setup-cli-$v-linux-x86_64.tar.gz" "fiber-setup-cli-$v" ;;
+            # Staged above: out/app, out/cli and Microsoft's WebView2 installer.
+            # Signed, packed and checksummed by sign-windows.
             windows) ;;
           esac
           cd out
@@ -213,8 +250,9 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      # Ours only: the app, the USB driver's catalog and the uninstaller. Not
-      # Microsoft's WebView2 installer: that is signed by Microsoft.
+      # Ours only: the app, the command line, the USB driver's catalog and the
+      # uninstaller. Not Microsoft's WebView2 installer: that is signed by
+      # Microsoft.
       - uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: https://weu.codesigning.azure.net/
@@ -222,6 +260,7 @@ jobs:
           certificate-profile-name: hardwario
           files: |
             ${{ github.workspace }}\work\app\fiber-setup.exe
+            ${{ github.workspace }}\work\cli\fiber-setup-cli.exe
             ${{ github.workspace }}\work\app\usbboot\driver\fiber-usbboot.cat
             ${{ github.workspace }}\work\uninstall.exe
           file-digest: SHA256
@@ -248,7 +287,7 @@ jobs:
           exclude-interactive-browser-credential: true
       - name: Verify the signatures
         shell: pwsh
-        run: scripts/windows-verify.ps1 -Work work -Files app\fiber-setup.exe, app\usbboot\driver\fiber-usbboot.cat, uninstall.exe
+        run: scripts/windows-verify.ps1 -Work work -Files app\fiber-setup.exe, cli\fiber-setup-cli.exe, app\usbboot\driver\fiber-usbboot.cat, uninstall.exe
       # The question a signature check cannot answer: does Windows take a
       # driver package signed this way? Its signer is put among this
       # machine's trusted publishers (what "Always trust software from
@@ -259,12 +298,13 @@ jobs:
         shell: pwsh
         timeout-minutes: 5
         run: scripts/windows-verify.ps1 -Work work -Driver
-      - name: The installer and the zip
+      - name: The installer and the zips
         shell: pwsh
         run: |
           $label = "$env:GITHUB_REF_NAME" -replace '^v', ''
           scripts/windows-package.ps1 -Step installer -Label $label -Work work
           scripts/windows-package.ps1 -Step zip -Label $label -Work work
+          scripts/windows-package.ps1 -Step cli -Label $label -Work work
       - uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: https://weu.codesigning.azure.net/
@@ -387,6 +427,18 @@ jobs:
           codesign --force --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$dmg"
           notarize "$dmg"
           xcrun stapler staple "$dmg"
+          # The command line: its program signed, and the zip notarized. A bare program cannot
+          # carry a stapled ticket; Gatekeeper asks Apple for it when the program first runs.
+          ditto -x -k unsigned/unsigned-macos/fiber-setup-cli.zip work/cli
+          cli="work/cli/fiber-setup-cli-$v"
+          programs=$(cd "$cli" && find . -type f -exec sh -c 'file -b "$1" | grep -q "Mach-O" && echo "${1#./}"' _ {} \; | sort)
+          echo "$programs"
+          if [ "$programs" != fiber-setup-cli ]; then echo "::error::the command line's folder holds another program than the one this job signs"; exit 1; fi
+          sign --identifier com.hardwario.fiber-setup-cli "$cli/fiber-setup-cli"
+          codesign --verify --strict --verbose=2 "$cli/fiber-setup-cli"
+          zip="out/fiber-setup-cli-$v-macos-universal.zip"
+          ditto -c -k --keepParent "$cli" "$zip"
+          notarize "$zip"
       - name: Verify
         run: |
           set -euo pipefail
@@ -396,12 +448,13 @@ jobs:
           dmg=$(echo out/*.dmg)
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
           xcrun stapler validate "$dmg"
-          f="$app/Contents/MacOS/fiber-setup"
-          info=$(codesign -dvv "$f" 2>&1)
-          grep -q "Authority=Developer ID Application" <<< "$info" || { echo "::error::$f is not signed with Developer ID"; exit 1; }
-          grep -q "^Timestamp=" <<< "$info" || { echo "::error::the signature of $f has no timestamp"; exit 1; }
-          grep -q "flags=0x10000(runtime)" <<< "$info" || { echo "::error::$f lacks the hardened runtime"; exit 1; }
-          [ "$(lipo -archs "$f" | tr ' ' '\n' | sort | xargs)" = "arm64 x86_64" ] || { echo "::error::$f is not for Apple silicon and Intel"; exit 1; }
+          for f in "$app/Contents/MacOS/fiber-setup" work/cli/fiber-setup-cli-*/fiber-setup-cli; do
+            info=$(codesign -dvv "$f" 2>&1)
+            grep -q "Authority=Developer ID Application" <<< "$info" || { echo "::error::$f is not signed with Developer ID"; exit 1; }
+            grep -q "^Timestamp=" <<< "$info" || { echo "::error::the signature of $f has no timestamp"; exit 1; }
+            grep -q "flags=0x10000(runtime)" <<< "$info" || { echo "::error::$f lacks the hardened runtime"; exit 1; }
+            [ "$(lipo -archs "$f" | tr ' ' '\n' | sort | xargs)" = "arm64 x86_64" ] || { echo "::error::$f is not for Apple silicon and Intel"; exit 1; }
+          done
       - name: Checksums
         run: |
           set -euo pipefail
@@ -460,7 +513,8 @@ jobs:
           cd out
           expected=()
           for f in fiber-setup-*-windows-x64-setup.exe fiber-setup-*-windows-x64-portable.zip \
-                   fiber-setup-*-macos-universal.dmg fiber-setup-*-linux-x86_64.AppImage fiber-setup-*-linux-x86_64.deb; do
+                   fiber-setup-*-macos-universal.dmg fiber-setup-*-linux-x86_64.AppImage fiber-setup-*-linux-x86_64.deb \
+                   fiber-setup-cli-*-windows-x64.zip fiber-setup-cli-*-macos-universal.zip fiber-setup-cli-*-linux-x86_64.tar.gz; do
             if [ ! -f "$f" ] || [ ! -f "$f.sha256" ]; then echo "::error::missing $f or its checksum"; problems=1; fi
             expected+=("$f" "$f.sha256")
           done

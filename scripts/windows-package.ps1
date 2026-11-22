@@ -1,17 +1,20 @@
 # Packs FIBER Setup for Windows: the installer and the portable zip, from an app that is already
 # built. In steps, because a release signs files in between (docs/release.md):
 #
-#   stage        the app as it will be installed: fiber-setup.exe and the usbboot folder
+#   stage        the app as it will be installed: fiber-setup.exe and the usbboot folder; with
+#                -Cli, the command line's fiber-setup-cli.exe beside it, in cli
 #   webview2     Microsoft's WebView2 installer, which the app's installer carries along
 #   uninstaller  uninstall.exe (a release signs it, with the app and the driver's catalog)
 #   installer    the installer, which carries the staged app and that uninstall.exe
 #   zip          the portable zip of the staged app
+#   cli          the command line's zip: fiber-setup-cli.exe and the staged app's usbboot folder
 #
 # -Work is the folder they share. -Label is the version in the file names (a tag's version in a
 # release; anything else in a test).
 param(
-  [Parameter(Mandatory)][ValidateSet('stage', 'webview2', 'uninstaller', 'installer', 'zip')][string]$Step,
+  [Parameter(Mandatory)][ValidateSet('stage', 'webview2', 'uninstaller', 'installer', 'zip', 'cli')][string]$Step,
   [string]$Exe,
+  [string]$Cli,
   [string]$Label,
   [string]$Work = 'target\windows-package'
 )
@@ -61,6 +64,13 @@ switch ($Step) {
     Copy-Item $Exe (Join-Path $app 'fiber-setup.exe')
     Copy-Item $usbboot (Join-Path $app 'usbboot') -Recurse
     Get-ChildItem $app -Recurse -File | ForEach-Object { $_.FullName.Substring($app.Length + 1) }
+    if ($Cli) {
+      $cliDir = Join-Path $Work 'cli'
+      Remove-Item $cliDir -Recurse -Force -ErrorAction SilentlyContinue
+      New-Item -ItemType Directory -Force $cliDir | Out-Null
+      Copy-Item $Cli (Join-Path $cliDir 'fiber-setup-cli.exe')
+      'cli\fiber-setup-cli.exe'
+    }
   }
   'webview2' {
     # The small one, which downloads the rest: https://developer.microsoft.com/microsoft-edge/webview2
@@ -103,6 +113,25 @@ switch ($Step) {
     Remove-Item (Join-Path $Work 'zip') -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force (Split-Path $top) | Out-Null
     Copy-Item $app $top -Recurse
+    Compress-Archive -Path $top -DestinationPath $zip
+    Remove-Item (Join-Path $Work 'zip') -Recurse -Force
+    "$(Split-Path $zip -Leaf): $((Get-Item $zip).Length) bytes"
+  }
+  'cli' {
+    $exe = Join-Path $Work 'cli\fiber-setup-cli.exe'
+    if (-not (Test-Path $exe)) { throw 'cli\fiber-setup-cli.exe is missing: stage it with -Cli first' }
+    New-Item -ItemType Directory -Force $out | Out-Null
+    $zip = Join-Path $out "fiber-setup-cli-$Label-windows-x64.zip"
+    Remove-Item $zip -ErrorAction SilentlyContinue
+    # One folder in the zip: the program finds the gadget's files and the USB driver in the
+    # usbboot folder beside it (the staged app's, whose driver catalog a release has signed).
+    $top = Join-Path $Work "zip\fiber-setup-cli-$Label"
+    Remove-Item (Join-Path $Work 'zip') -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $top | Out-Null
+    Copy-Item $exe $top
+    Copy-Item (Join-Path $app 'usbboot') (Join-Path $top 'usbboot') -Recurse
+    Copy-Item (Join-Path $root 'LICENSE') $top
+    Copy-Item (Join-Path $root 'LICENSES') (Join-Path $top 'LICENSES') -Recurse
     Compress-Archive -Path $top -DestinationPath $zip
     Remove-Item (Join-Path $Work 'zip') -Recurse -Force
     "$(Split-Path $zip -Leaf): $((Get-Item $zip).Length) bytes"

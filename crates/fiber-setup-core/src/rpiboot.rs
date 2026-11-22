@@ -46,8 +46,9 @@ fn is_gadget(dir: &Path) -> bool {
 }
 
 /// Finds the gadget's files: `FIBER_SETUP_USBBOOT` (a usbboot checkout or bundle), the
-/// directories the app passes (its bundled resources), a usbboot checkout in
-/// `~/github/raspberrypi/usbboot`, then where a system's `rpiboot` package keeps them.
+/// directories the caller passes (the app's bundled resources, the folder beside the program), a
+/// usbboot checkout in `~/github/raspberrypi/usbboot`, then where a system's `rpiboot` package
+/// keeps them.
 pub fn find_tools(extra: &[PathBuf]) -> Option<Tools> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(d) = std::env::var_os("FIBER_SETUP_USBBOOT") {
