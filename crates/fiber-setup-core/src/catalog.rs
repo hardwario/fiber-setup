@@ -22,13 +22,13 @@ pub struct OsImage {
 /// first start needs no internet; with nothing ticked the FIBER starts with nothing turned on.
 /// The sha256 and size are those of the published release (its `SHA256SUMS`; 3.69 GB unpacked).
 pub const FIBER_IMAGE: OsImage = OsImage {
-    id: "fiber-platform-1.0.0-image-arm64",
-    name: "FIBER platform 1.0.0",
+    id: "fiber-platform-1.0.1-image-arm64",
+    name: "FIBER platform 1.0.1",
     version: "on Raspberry Pi OS Lite of 2026-10-06",
-    url: "https://github.com/hardwario/fiber-platform/releases/download/v1.0.0/fiber-platform-1.0.0-image-arm64.img.xz",
-    sha256: "30549b12b143a9b54242cdb5faf34e79dbb62e49095ca6898946544de77ec56b",
-    size: 650_635_620,
-    file_name: "fiber-platform-1.0.0-image-arm64.img.xz",
+    url: "https://github.com/hardwario/fiber-platform/releases/download/v1.0.1/fiber-platform-1.0.1-image-arm64.img.xz",
+    sha256: "2d17a747101eea5bd09934266760b1f652c40b66057fbaa3eda8d69377a041d3",
+    size: 650_568_860,
+    file_name: "fiber-platform-1.0.1-image-arm64.img.xz",
 };
 
 /// A release of the FIBER platform, named by its installer: a new FIBER installs this one, and
@@ -52,8 +52,8 @@ impl PlatformRelease {
 /// same release's `provision/components.yaml`, and moves with it. Its installer is the one inside
 /// [`FIBER_IMAGE`].
 pub const FIBER_PLATFORM: PlatformRelease = PlatformRelease {
-    version: "1.0.0",
-    installer_sha256: "bd9d84e2115e43f9ddfad77f984c126b7abf5246867ac9854e408a3e394f2e3e",
+    version: "1.0.1",
+    installer_sha256: "440c9810abf082309066c0fde3df33eb59791444e3f643be020fd1251b942fbf",
 };
 
 #[cfg(test)]
