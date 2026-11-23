@@ -82,7 +82,7 @@ export const de: Messages = {
       "Name und Passwort Ihres WLANs oder ein Ethernet-Kabel zu Ihrem Netzwerk",
     ],
     timeTitle: "Wie lange es dauert",
-    time: "Etwa 10 Minuten. Das Schreiben dauert etwa 5 Minuten. Beim ersten Start schaltet der FIBER die gewählten Komponenten in etwa einer Minute ein, ohne Internet.",
+    time: "Etwa 15 Minuten. Das Schreiben dauert etwa 5 Minuten. Beim ersten Start schaltet der FIBER die gewählten Komponenten in etwa 3 Minuten ein, ohne Internet.",
     erase: "Alles im eingebauten Speicher des FIBER (eMMC) wird überschrieben.",
   },
   image: {
@@ -285,7 +285,7 @@ export const de: Messages = {
     lead: "Der FIBER richtet sich jetzt selbst ein. Sie müssen nichts tun.",
     timeline: [
       "Etwa 1 Minute: Er startet und verbindet sich als {hub} mit Ihrem Netzwerk.",
-      "Etwa 1 Minute: Er schaltet ohne Internet die gewählten Komponenten ein.",
+      "Etwa 3 Minuten: Er schaltet ohne Internet die gewählten Komponenten ein.",
       "Wenn sich die Einstellungen der Platine geändert haben, startet er einmal neu. Dann ist er bereit.",
     ],
     timelinePlain: ["Etwa 1 Minute: Er startet und verbindet sich mit Ihrem Netzwerk."],

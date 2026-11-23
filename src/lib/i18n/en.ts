@@ -80,7 +80,7 @@ export const en = {
       "Your Wi-Fi name and password, or an Ethernet cable to your network",
     ],
     timeTitle: "How long it takes",
-    time: "About 10 minutes. Writing takes about 5 minutes. On its first start the FIBER turns on the components you chose, in about a minute and without the internet.",
+    time: "About 15 minutes. Writing takes about 5 minutes. On its first start the FIBER turns on the components you chose, in about 3 minutes and without the internet.",
     erase: "Everything on the FIBER's built-in memory (eMMC) will be replaced.",
   },
   image: {
@@ -285,7 +285,7 @@ export const en = {
     lead: "The FIBER now sets itself up. You don't need to do anything.",
     timeline: [
       "About 1 minute: it starts and joins your network as {hub}.",
-      "About 1 minute: it turns on the components you chose, without the internet.",
+      "About 3 minutes: it turns on the components you chose, without the internet.",
       "If the board's settings changed, it restarts once. Then it is ready.",
     ],
     timelinePlain: ["About 1 minute: it starts and joins your network."],

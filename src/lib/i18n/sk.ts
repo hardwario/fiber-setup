@@ -82,7 +82,7 @@ export const sk: Messages = {
       "Názov a heslo vašej Wi-Fi alebo ethernetový kábel do vašej siete",
     ],
     timeTitle: "Ako dlho to trvá",
-    time: "Asi 10 minút. Zápis trvá asi 5 minút. Pri prvom štarte FIBER zapne zvolené súčasti, asi za minútu a bez internetu.",
+    time: "Asi 15 minút. Zápis trvá asi 5 minút. Pri prvom štarte FIBER zapne zvolené súčasti, asi za 3 minúty a bez internetu.",
     erase: "Všetko vo vstavanej pamäti FIBER (eMMC) bude nahradené.",
   },
   image: {
@@ -285,7 +285,7 @@ export const sk: Messages = {
     lead: "FIBER sa teraz nastaví sám. Nemusíte nič robiť.",
     timeline: [
       "Asi 1 minúta: naštartuje a pripojí sa do vašej siete ako {hub}.",
-      "Asi 1 minúta: bez internetu zapne zvolené súčasti.",
+      "Asi 3 minúty: bez internetu zapne zvolené súčasti.",
       "Ak sa zmenilo nastavenie dosky, raz sa reštartuje. Potom je pripravený.",
     ],
     timelinePlain: ["Asi 1 minúta: naštartuje a pripojí sa do vašej siete."],

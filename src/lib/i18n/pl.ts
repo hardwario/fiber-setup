@@ -82,7 +82,7 @@ export const pl: Messages = {
       "Nazwa i hasło Twojej sieci Wi-Fi albo kabel Ethernet do Twojej sieci",
     ],
     timeTitle: "Ile to trwa",
-    time: "Około 10 minut. Zapis trwa około 5 minut. Przy pierwszym uruchomieniu FIBER w ciągu około minuty włącza wybrane składniki, bez internetu.",
+    time: "Około 15 minut. Zapis trwa około 5 minut. Przy pierwszym uruchomieniu FIBER w ciągu około 3 minut włącza wybrane składniki, bez internetu.",
     erase: "Cała zawartość wbudowanej pamięci FIBER (eMMC) zostanie zastąpiona.",
   },
   image: {
@@ -285,7 +285,7 @@ export const pl: Messages = {
     lead: "FIBER teraz sam się konfiguruje. Nie musisz nic robić.",
     timeline: [
       "Około 1 minuty: uruchamia się i dołącza do Twojej sieci jako {hub}.",
-      "Około 1 minuty: bez internetu włącza wybrane składniki.",
+      "Około 3 minut: bez internetu włącza wybrane składniki.",
       "Jeśli zmieniły się ustawienia płytki, raz uruchamia się ponownie. Potem jest gotowy.",
     ],
     timelinePlain: ["Około 1 minuty: uruchamia się i dołącza do Twojej sieci."],

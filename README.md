@@ -51,8 +51,8 @@ sibling for the terminal, writes a FIBER without a window.
 - Your Wi-Fi name and password, or an Ethernet cable to your network.
 - The internet on the computer, for the download (once). The FIBER needs none for its first start.
 
-It takes about 10 minutes: 5 to write, and about a minute for the FIBER to turn on its components on the
-first start (not yet timed on a FIBER). Everything on the FIBER's built-in memory is replaced.
+It takes about 15 minutes: about 5 to write, and about 4 for the FIBER's first start with every component
+ticked (measured on a FIBER: 4 min 11 s from `RESET`). Everything on the FIBER's built-in memory is replaced.
 
 ## Download
 
@@ -129,7 +129,7 @@ Nine steps in three parts. The step list on the left shows where you are, and *B
 | | 5. Connect the FIBER | USB-B cable, power, `RESET`. The app finds the FIBER by itself |
 | | 6. Write the software | The image with your settings is written and read back, in about 5 minutes |
 | **Start** | 7. Start the FIBER | Jumper off `BOOT`, `RESET`, cover back on |
-| | 8. Follow the first start | The FIBER joins your network and turns on the components you ticked, in about a minute. The app follows it on the network, step by step |
+| | 8. Follow the first start | The FIBER joins your network and turns on the components you ticked, in about 4 minutes. The app follows it on the network, step by step |
 | | 9. Log in to the system | The `ssh` command for your FIBER, with the user name and the password you chose |
 
 **Step 3: Enter the settings**
